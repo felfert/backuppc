@@ -95,6 +95,9 @@ $Lang{BackupPC_Server_Status_General_Info}= <<EOF;
         <li>Het backup filesystem werd recentelijk aangevuld voor \$Info{DUlastValue}%
             op (\$DUlastTime), het maximum van vandaag is \$Info{DUDailyMax}% (\$DUmaxTime)
             en het maximum van gisteren was \$Info{DUDailyMaxPrev}%.
+        <li>Het backup filesystem inode werd recentelijk aangevuld voor \$Info{DUInodelastValue}%
+            op (\$DUlastTime), het maximum van vandaag is \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)
+            en het maximum van gisteren was \$Info{DUInodeDailyMaxPrev}%.
     </ul>
 </ul>
 EOF
@@ -105,7 +108,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 <p>
 \${h2("Momenteel lopende jobs")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td> Machine </td>
     <td> Type </td>
     <td> Gebruiker </td>
@@ -124,7 +127,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 
 \${h2("Opgetreden fouten die aandacht vragen")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> Machine </td>
     <td align="center"> Type </td>
     <td align="center"> Gebruiker </td>
@@ -148,6 +151,9 @@ $Lang{BackupPC_Summary}=<<EOF;
 <li>Het backup filesystem werd recentelijk aangevuld voor \$Info{DUlastValue}%
      op (\$DUlastTime), het maximum van vandaag is \$Info{DUDailyMax}% (\$DUmaxTime)
      en het maximum van gisteren was \$Info{DUDailyMaxPrev}%.
+<li>Het backup filesystem inode werd recentelijk aangevuld voor \$Info{DUInodelastValue}%
+    op (\$DUlastTime), het maximum van vandaag is \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)
+    en het maximum van gisteren was \$Info{DUInodeDailyMaxPrev}%.
 </ul>
 </p>
 
@@ -164,6 +170,7 @@ Er zijn \$hostCntGood hosts gebackupt, wat een totaal geeft van:
 <table class="sortable" id="host_summary_backups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Machine </td>
     <td align="center"> Gebruiker </td>
+    <td align="center"> Commentaar </td>
     <td align="center"> Aantal Voll. </td>
     <td align="center"> Voll.Lftd (dagen) </td>
     <td align="center"> Voll.Grootte (GiB) </td>
@@ -176,7 +183,6 @@ Er zijn \$hostCntGood hosts gebackupt, wat een totaal geeft van:
     <td align="center"> Laatste poging</td></tr>
 \$strGood
 </table>
-<br><br>
 \${h2("Hosts zonder backups")}
 <p>
 Er zijn \$hostCntNone hosts zonder backup.
@@ -184,6 +190,7 @@ Er zijn \$hostCntNone hosts zonder backup.
 <table class="sortable" id="host_summary_nobackups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Machine </td>
     <td align="center"> Gebruiker </td>
+    <td align="center"> Commentaar </td>
     <td align="center"> Aantal Voll. </td>
     <td align="center"> Voll.Lftd (dagen) </td>
     <td align="center"> Voll.Grootte (GiB) </td>
@@ -312,6 +319,7 @@ EOF
 
 # --------------------------------
 $Lang{BackupPC__Backup_Requested_on__host} = "BackupPC: backup aangevraagd van \$host";
+$Lang{BackupPC__Delete_Requested_for_a_backup_of__host} = "BackupPC: Delete Requested for a backup of \$host";
 # --------------------------------
 $Lang{REPLY_FROM_SERVER} = <<EOF;
 \${h1(\$str)}
@@ -374,36 +382,36 @@ $Lang{BackupPC__Queue_Summary} = "BackupPC: overzicht wachtrij";
 # --------------------------------
 $Lang{Backup_Queue_Summary} = <<EOF;
 \${h1("Overzicht Wachtrij backup")}
-<br><br>
 \${h2("Overzicht Wachtrij: Gebruikers")}
 <p>
 Deze aanvragen van gebruikers staan momenteel in de wachtrij:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Machine </td>
+    <td> Action </td>
     <td> Aanvraagtijd </td>
     <td> Gebruiker </td></tr>
 \$strUser
 </table>
-<br><br>
 
 \${h2("Overzicht Wachtrij: in achtergrond")}
 <p>
 Deze aanvragen voor backups in de achtergrond staan momenteel in de wachtrij:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Machine </td>
+    <td> Action </td>
     <td> Aanvraagtijd </td>
     <td> Gebruiker </td></tr>
 \$strBg
 </table>
-<br><br>
 \${h2("Overzicht Wachtrij: Opdrachten")}
 <p>
 Deze aanvragen via opdracht staan momenteel in de wachtrij:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Machine </td>
+    <td> Action </td>
     <td> Aanvraagtijd </td>
     <td> Gebruiker </td>
     <td> Opdracht </td></tr>
@@ -432,7 +440,7 @@ $Lang{BackupPC__Log_File_History} = "BackupPC: Geschiedenis Logbestand";
 $Lang{Log_File_History__hdr} = <<EOF;
 \${h1("Geschiedenis Logbestand \$hdr")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Bestand </td>
     <td align="center"> Grootte </td>
     <td align="center"> Laatste wijziging </td></tr>
@@ -444,7 +452,7 @@ EOF
 $Lang{Recent_Email_Summary} = <<EOF;
 \${h1("Overzicht recente e-mail (Omgekeerde volgorde)")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Bestemming </td>
     <td align="center"> Machine </td>
     <td align="center"> Tijd </td>
@@ -651,6 +659,34 @@ Het antwoord van de server was: \$reply
 EOF
 
 
+# --------------------------------
+$Lang{BackupPC__Delete_Backup_Confirm__num_of__host} = "BackupPC: Delete Backup Confirm #\$num of \$host";
+# --------------------------------
+$Lang{A_filled} = "a filled";
+$Lang{An_unfilled} = "an unfilled";
+$Lang{Are_you_sure_delete} = <<EOF;
+\${h1("Are you sure?")}
+<p>
+You are about to delete \$filled \$type backup #\$num of \$host.
+
+<form name="Confirm" action="\$MyURL" method="get">
+
+<input type="hidden" name="host" value="\${EscHTML(\$host)}">
+<input type="hidden" name="num" value="\$num">
+
+<input type="hidden" name="doit" value="1">
+<input type="hidden" name="action" value="">
+
+Do you really want to do this?
+
+<input type="button" value="\${EscHTML(\$Lang->{CfgEdit_Button_Delete})}"
+ onClick="document.Confirm.action.value='deleteBackup';
+          document.Confirm.submit();">
+
+<input type="submit" value="No" name="ignore">
+</form>
+EOF
+
 # -------------------------
 $Lang{Host__host_Backup_Summary} = "BackupPC: Overzicht backup van machine \$host";
 
@@ -680,7 +716,7 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 <p>
 Klik op het backupnummer om de inhoud te bekijken of om bestanden te herstellen.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> backup nr.</td>
     <td align="center"> Type </td>
     <td align="center"> Aangevuld </td>
@@ -688,6 +724,7 @@ Klik op het backupnummer om de inhoud te bekijken of om bestanden te herstellen.
     <td align="center"> Startdatum </td>
     <td align="center"> Duurtijd in min. </td>
     <td align="center"> Lftd. in dagen </td>
+    \$deleteHdrStr
     <td align="center"> Plaats op de server </td>
 </tr>
 \$str
@@ -696,10 +733,8 @@ Klik op het backupnummer om de inhoud te bekijken of om bestanden te herstellen.
 
 \$restoreStr
 </p>
-<br><br>
 \${h2("Overzicht van fouten tijdens overdracht")}
-<br><br>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> backup nr. </td>
     <td align="center"> Type </td>
     <td align="center"> Bekijken </td>
@@ -710,7 +745,6 @@ Klik op het backupnummer om de inhoud te bekijken of om bestanden te herstellen.
 </tr>
 \$errStr
 </table>
-<br><br>
 
 \${h2("Overzicht bestandsgrootte en hergebruik")}
 <p>
@@ -718,13 +752,13 @@ Bestaande bestanden zijn bestanden die reeds aanwezig waren op de backupschijf.
 Nieuwe bestanden zijn bestanden die aan de schijf zijn toegevoegd.
 Lege bestanden en SMB-fouten worden niet geteld in de aantallen \'hergebruik\' en \'nieuw\'.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="2" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> Totalen </td>
     <td align="center" colspan="2"> Bestaande bestanden </td>
     <td align="center" colspan="2"> Nieuwe bestanden </td>
 </tr>
-<tr class="tableheader">
+<tr class="tableheader sortheader">
     <td align="center"> Backup nr. </td>
     <td align="center"> Type </td>
     <td align="center"> Aantal best.</td>
@@ -737,19 +771,18 @@ Lege bestanden en SMB-fouten worden niet geteld in de aantallen \'hergebruik\' e
 </tr>
 \$sizeStr
 </table>
-<br><br>
 
 \${h2("Overzicht compressie")}
 <p>
 Compressie van bestanden die reeds op schijf stonden en van nieuw
 gecomprimeerde bestanden.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="3" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> Bestaande bestanden </td>
     <td align="center" colspan="3"> Nieuwe bestanden </td>
 </tr>
-<tr class="tableheader"><td align="center"> backup nr. </td>
+<tr class="tableheader sortheader"><td align="center"> backup nr. </td>
     <td align="center"> Type </td>
     <td align="center"> Comp.niveau </td>
     <td align="center"> Grootte in MB </td>
@@ -761,7 +794,6 @@ gecomprimeerde bestanden.
 </tr>
 \$compStr
 </table>
-<br><br>
 EOF
 
 $Lang{Host__host_Archive_Summary} = "BackupPC: Overzicht archivering machine \$host";
@@ -901,7 +933,7 @@ alle backups heen:
 <li> Klik op de versie-link van een bestand (\$Lang->{DirHistory_fileLink}0,
      \$Lang->{DirHistory_fileLink}1, ...) om dat bestand te downloaden,
 <li> Bestanden met dezelfde inhoud maar in verschillende backups hebben
-     hetzelfde versienummer,
+     hetzelfde versienummer (PleaseTranslateThis: except between v3 and v4 backups),
 <li> Bestanden of mappen die in een bepaalde backup niet aanwezig zijn hebben
      een lege cel.
 <li> Bestanden met hetzelfde versienummer kunnen wel verschillende attributen 
@@ -1005,6 +1037,8 @@ $Lang{Only_privileged_users_can_view_log_files} = "Enkel gebruikers met bijzonde
 $Lang{Only_privileged_users_can_view_email_summaries} = "Enkel gebruikers met bijzondere rechten kunnen het e-mailoverzicht bekijken.";
 $Lang{Only_privileged_users_can_browse_backup_files} = "Enkel gebruikers met bijzondere rechten kunnen de backup "
                 . "van machine \${EscHTML(\$In{host})} bekijken.";
+$Lang{Only_privileged_users_can_delete_backups} = "Only privileged users can delete backups"
+                . " of host \${EscHTML(\$host)}.";
 $Lang{Empty_host_name} = "Geen of lege machinenaam.";
 $Lang{Directory___EscHTML} = "Map \${EscHTML(\"\$TopDir/pc/\$host/\$num\")}"
 		    . " is leeg";
@@ -1055,6 +1089,8 @@ $Lang{Backup_requested_on__host_by__User} = "backup aangevraagd van \$host door 
 $Lang{Backup_stopped_dequeued_on__host_by__User} = "backup geannuleerd van \$host door \$User";
 $Lang{Restore_requested_to_host__hostDest__backup___num} = "Herstel aangevraagd voor machine \$hostDest, backup nr.\$num,"
 	     . " door \$User vanaf \$ENV{REMOTE_ADDR}";
+$Lang{Delete_requested_for_backup_of__host_by__User} = "Delete requested for backup #\$num of \$host"
+             . " by \$User from \$ENV{REMOTE_ADDR}";
 $Lang{Archive_requested} = "Archivering aangevraagd door \$User vanaf \$ENV{REMOTE_ADDR}";
 
 # -------------------------------------------------
@@ -1192,7 +1228,7 @@ $Lang{Restore_Summary} = <<EOF;
 \${h2("Overzicht herstellingen")}
 <p>
 Klik op het nummer voor meer details.
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Herstel nr.</td>
     <td align="center"> Resultaat </td>
     <td align="right"> Startdatum</td>
@@ -1299,7 +1335,7 @@ systeembeheerder.
 
 Met vriendelijke groeten,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # No recent backup
@@ -1332,7 +1368,7 @@ van uw pc zou crashen. Hierin zijn nieuwe e-mail en bijlagen inbegrepen.
 
 Met vriendelijke groeten,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # Old Outlook files
@@ -1370,7 +1406,7 @@ vragen vooraleer de backup volledig is.
 
 Met vriendelijke groeten,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 $Lang{howLong_not_been_backed_up} = "(nog) niet succesvol gebackupt";
@@ -1389,6 +1425,7 @@ Snelheid MB/sec: \$fullRate;
 Aantal Incr.: \$incrCnt;
 Incr.Lftd/dagen: \$incrAge;
 Status: \$host_state;
+Invalide: \$host_disabled;
 Laatste poging: \$host_last_attempt;
 EOF
 

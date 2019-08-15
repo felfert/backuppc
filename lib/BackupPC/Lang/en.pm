@@ -94,6 +94,9 @@ $Lang{BackupPC_Server_Status_General_Info}= <<EOF;
         <li>Pool file system was recently at \$Info{DUlastValue}%
             (\$DUlastTime), today\'s max is \$Info{DUDailyMax}% (\$DUmaxTime)
             and yesterday\'s max was \$Info{DUDailyMaxPrev}%.
+        <li>Pool file system inode usage was recently at \$Info{DUInodelastValue}%
+            (\$DUlastTime), today\'s max is \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)
+            and yesterday\'s max was \$Info{DUInodeDailyMaxPrev}%.
     </ul>
 </ul>
 EOF
@@ -104,7 +107,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 <p>
 \${h2("Currently Running Jobs")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td> Host </td>
     <td> Type </td>
     <td> User </td>
@@ -123,7 +126,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 
 \${h2("Failures that need attention")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> Host </td>
     <td align="center"> Type </td>
     <td align="center"> User </td>
@@ -146,7 +149,10 @@ $Lang{BackupPC_Summary} = <<EOF;
 <li>This status was generated at \$now.
 <li>Pool file system was recently at \$Info{DUlastValue}%
     (\$DUlastTime), today\'s max is \$Info{DUDailyMax}% (\$DUmaxTime)
-        and yesterday\'s max was \$Info{DUDailyMaxPrev}%.
+    and yesterday\'s max was \$Info{DUDailyMaxPrev}%.
+<li>Pool file system inode usage was recently at \$Info{DUInodelastValue}%
+    (\$DUlastTime), today\'s max is \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)
+    and yesterday\'s max was \$Info{DUInodeDailyMaxPrev}%.
 </ul>
 </p>
 
@@ -163,6 +169,7 @@ There are \$hostCntGood hosts that have been backed up, for a total of:
 <table class="sortable" id="host_summary_backups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Host </td>
     <td align="center"> User </td>
+    <td align="center"> Comment </td>
     <td align="center"> #Full </td>
     <td align="center"> Full Age (days) </td>
     <td align="center"> Full Size (GiB) </td>
@@ -175,7 +182,6 @@ There are \$hostCntGood hosts that have been backed up, for a total of:
     <td align="center"> Last attempt </td></tr>
 \$strGood
 </table>
-<br><br>
 \${h2("Hosts with no Backups")}
 <p>
 There are \$hostCntNone hosts with no backups.
@@ -183,6 +189,7 @@ There are \$hostCntNone hosts with no backups.
 <table class="sortable" id="host_summary_nobackups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Host </td>
     <td align="center"> User </td>
+    <td align="center"> Comment </td>
     <td align="center"> #Full </td>
     <td align="center"> Full Age (days) </td>
     <td align="center"> Full Size (GiB) </td>
@@ -310,6 +317,7 @@ EOF
 
 # --------------------------------
 $Lang{BackupPC__Backup_Requested_on__host} = "BackupPC: Backup Requested on \$host";
+$Lang{BackupPC__Delete_Requested_for_a_backup_of__host} = "BackupPC: Delete Requested for a backup of \$host";
 # --------------------------------
 $Lang{REPLY_FROM_SERVER} = <<EOF;
 \${h1(\$str)}
@@ -372,36 +380,36 @@ $Lang{BackupPC__Queue_Summary} = "BackupPC: Queue Summary";
 # --------------------------------
 $Lang{Backup_Queue_Summary} = <<EOF;
 \${h1("Backup Queue Summary")}
-<br><br>
 \${h2("User Queue Summary")}
 <p>
 The following user requests are currently queued:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Host </td>
+    <td> Action </td>
     <td> Req Time </td>
     <td> User </td></tr>
 \$strUser
 </table>
-<br><br>
 
 \${h2("Background Queue Summary")}
 <p>
 The following background requests are currently queued:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Host </td>
+    <td> Action </td>
     <td> Req Time </td>
     <td> User </td></tr>
 \$strBg
 </table>
-<br><br>
 \${h2("Command Queue Summary")}
 <p>
 The following command requests are currently queued:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Host </td>
+    <td> Action </td>
     <td> Req Time </td>
     <td> User </td>
     <td> Command </td></tr>
@@ -430,7 +438,7 @@ $Lang{BackupPC__Log_File_History} = "BackupPC: Log File History";
 $Lang{Log_File_History__hdr} = <<EOF;
 \${h1("Log File History \$hdr")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> File </td>
     <td align="center"> Size </td>
     <td align="center"> Modification time </td></tr>
@@ -442,7 +450,7 @@ EOF
 $Lang{Recent_Email_Summary} = <<EOF;
 \${h1("Recent Email Summary (Reverse time order)")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Recipient </td>
     <td align="center"> Host </td>
     <td align="center"> Time </td>
@@ -649,6 +657,34 @@ Reply from server was: \$reply
 EOF
 
 
+# --------------------------------
+$Lang{BackupPC__Delete_Backup_Confirm__num_of__host} = "BackupPC: Delete Backup Confirm #\$num of \$host";
+# --------------------------------
+$Lang{A_filled} = "a filled";
+$Lang{An_unfilled} = "an unfilled";
+$Lang{Are_you_sure_delete} = <<EOF;
+\${h1("Are you sure?")}
+<p>
+You are about to delete \$filled \$type backup #\$num of \$host.
+
+<form name="Confirm" action="\$MyURL" method="get">
+
+<input type="hidden" name="host" value="\${EscHTML(\$host)}">
+<input type="hidden" name="num" value="\$num">
+
+<input type="hidden" name="doit" value="1">
+<input type="hidden" name="action" value="">
+
+Do you really want to do this?
+
+<input type="button" value="\${EscHTML(\$Lang->{CfgEdit_Button_Delete})}"
+ onClick="document.Confirm.action.value='deleteBackup';
+          document.Confirm.submit();">
+
+<input type="submit" value="No" name="ignore">
+</form>
+EOF
+
 # -------------------------
 $Lang{Host__host_Backup_Summary} = "BackupPC: Host \$host Backup Summary";
 
@@ -678,7 +714,7 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 <p>
 Click on the backup number to browse and restore backup files.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> Backup# </td>
     <td align="center"> Type </td>
     <td align="center"> Filled </td>
@@ -686,6 +722,7 @@ Click on the backup number to browse and restore backup files.
     <td align="center"> Start Date </td>
     <td align="center"> Duration/mins </td>
     <td align="center"> Age/days </td>
+    \$deleteHdrStr
     <td align="center"> Server Backup Path </td>
 </tr>
 \$str
@@ -694,10 +731,8 @@ Click on the backup number to browse and restore backup files.
 
 \$restoreStr
 </p>
-<br><br>
 \${h2("Xfer Error Summary")}
-<br><br>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Backup# </td>
     <td align="center"> Type </td>
     <td align="center"> View </td>
@@ -708,7 +743,6 @@ Click on the backup number to browse and restore backup files.
 </tr>
 \$errStr
 </table>
-<br><br>
 
 \${h2("File Size/Count Reuse Summary")}
 <p>
@@ -716,13 +750,13 @@ Existing files are those already in the pool; new files are those added
 to the pool.
 Empty files and SMB errors aren\'t counted in the reuse and new counts.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="2" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> Totals </td>
     <td align="center" colspan="2"> Existing Files </td>
     <td align="center" colspan="2"> New Files </td>
 </tr>
-<tr class="tableheader">
+<tr class="tableheader sortheader">
     <td align="center"> Backup# </td>
     <td align="center"> Type </td>
     <td align="center"> #Files </td>
@@ -735,19 +769,18 @@ Empty files and SMB errors aren\'t counted in the reuse and new counts.
 </tr>
 \$sizeStr
 </table>
-<br><br>
 
 \${h2("Compression Summary")}
 <p>
 Compression performance for files already in the pool and newly
 compressed files.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="3" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> Existing Files </td>
     <td align="center" colspan="3"> New Files </td>
 </tr>
-<tr class="tableheader"><td align="center"> Backup# </td>
+<tr class="tableheader sortheader"><td align="center"> Backup# </td>
     <td align="center"> Type </td>
     <td align="center"> Comp Level </td>
     <td align="center"> Size/MiB </td>
@@ -759,7 +792,6 @@ compressed files.
 </tr>
 \$compStr
 </table>
-<br><br>
 EOF
 
 $Lang{Host__host_Archive_Summary} = "BackupPC: Host \$host Archive Summary";
@@ -899,7 +931,7 @@ the backups:
 <li> Click on a file version link (\$Lang->{DirHistory_fileLink}0,
      \$Lang->{DirHistory_fileLink}1, ...) to download that file,
 <li> Files with the same contents between different backups have the same
-     version number,
+     version number (except between v3 and v4 backups),
 <li> Files or directories not present in a particular backup have an
      empty box.
 <li> Files shown with the same version might have different attributes.
@@ -1003,6 +1035,8 @@ $Lang{Only_privileged_users_can_view_log_files} = "Only privileged users can vie
 $Lang{Only_privileged_users_can_view_email_summaries} = "Only privileged users can view email summaries.";
 $Lang{Only_privileged_users_can_browse_backup_files} = "Only privileged users can browse backup files"
                 . " for host \${EscHTML(\$In{host})}.";
+$Lang{Only_privileged_users_can_delete_backups} = "Only privileged users can delete backups"
+                . " of host \${EscHTML(\$host)}.";
 $Lang{Empty_host_name} = "Empty host name.";
 $Lang{Directory___EscHTML} = "Directory \${EscHTML(\"\$TopDir/pc/\$host/\$num\")}"
 		    . " is empty";
@@ -1053,6 +1087,8 @@ $Lang{Backup_requested_on__host_by__User} = "Backup requested on \$host by \$Use
 $Lang{Backup_stopped_dequeued_on__host_by__User} = "Backup stopped/dequeued on \$host by \$User";
 $Lang{Restore_requested_to_host__hostDest__backup___num} = "Restore requested to host \$hostDest, backup #\$num,"
 	     . " by \$User from \$ENV{REMOTE_ADDR}";
+$Lang{Delete_requested_for_backup_of__host_by__User} = "Delete requested for backup #\$num of \$host"
+             . " by \$User from \$ENV{REMOTE_ADDR}";
 $Lang{Archive_requested} = "Archive requested by \$User from \$ENV{REMOTE_ADDR}";
 
 # -------------------------------------------------
@@ -1190,7 +1226,7 @@ $Lang{Restore_Summary} = <<EOF;
 \${h2("Restore Summary")}
 <p>
 Click on the restore number for more details.
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Restore# </td>
     <td align="center"> Result </td>
     <td align="right"> Start Date</td>
@@ -1296,7 +1332,7 @@ next time you are in the office.
 
 Regards,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # No recent backup
@@ -1325,7 +1361,7 @@ attachments) cannot be restored if your PC disk crashes.
 
 Regards,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # Old Outlook files
@@ -1356,7 +1392,7 @@ complete.
 
 Regards,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 $Lang{howLong_not_been_backed_up} = "not been backed up successfully";
@@ -1375,6 +1411,7 @@ Speed MiB/sec: \$fullRate;
 Incr Count: \$incrCnt;
 Incr Age/Days: \$incrAge;
 State: \$host_state;
+Disabled: \$host_disabled;
 Last Attempt: \$host_last_attempt;
 EOF
 

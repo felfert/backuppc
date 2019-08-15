@@ -12,7 +12,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2004-2013  Craig Barratt
+#   Copyright (C) 2004-2018  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -29,7 +29,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 1 Dec 2013.
+# Version 4.3.0, released 25 Nov 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -379,6 +379,7 @@ sub ConfigFileMerge
                     my $d = Data::Dumper->new([$newConf->{$var}], [*value]);
                     $d->Indent(1);
                     $d->Terse(1);
+                    $d->Sortkeys(1);
                     my $value = $d->Dump;
                     $value =~ s/(.*)\n/$1;\n/s;
                     $contents .= "\$Conf{$var} = " . $value;
@@ -412,6 +413,7 @@ sub ConfigFileMerge
 	my $d = Data::Dumper->new([$newConf->{$var}], [*value]);
 	$d->Indent(1);
 	$d->Terse(1);
+        $d->Sortkeys(1);
 	my $value = $d->Dump;
 	$value =~ s/(.*)\n/$1;\n/s;
 	$contents .= "\$Conf{$var} = " . $value;
@@ -470,8 +472,7 @@ sub HostInfoRead
 {
     my($s, $host) = @_;
     my(%hosts, @hdr, @fld, $hostFd, $lockFd, $locked);
-
-    my(@Backups, $bkFd, $lockFd, $locked);
+    my(@Backups, $bkFd);
 
     if ( open($lockFd, ">", "$s->{ConfDir}/LOCK") ) {
         flock($lockFd, LOCK_EX);
@@ -479,7 +480,10 @@ sub HostInfoRead
     }
     if ( !open($hostFd, "$s->{ConfDir}/hosts") ) {
         print(STDERR "Can't open $s->{ConfDir}/hosts\n");
-        close(LOCK);
+        if ( $locked ) {
+            flock($lockFd, LOCK_UN);
+            close($lockFd);
+        }
         return {};
     }
     binmode($hostFd);

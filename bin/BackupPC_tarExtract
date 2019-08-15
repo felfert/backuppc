@@ -9,7 +9,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2001-2013  Craig Barratt
+#   Copyright (C) 2001-2018  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 30 Nov 2013.
+# Version 4.2.2, released 3 Nov 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -34,7 +34,7 @@
 
 use strict;
 no  utf8;
-use lib "__INSTALLDIR__/lib";
+use lib "/usr/local/BackupPC/lib";
 use Encode qw/from_to/;
 use BackupPC::Lib;
 use BackupPC::XS qw( :all );
@@ -55,17 +55,18 @@ my $BinDir = $bpc->BinDir();
 my %Conf   = $bpc->Conf();
 
 my %opts;
-if ( !getopts("fph:s:", \%opts) || @ARGV > 0 ) {
+if ( !getopts("fPph:s:", \%opts) || @ARGV > 0 ) {
     print <<EOF;
 usage: $0 [options] files/directories...
   Required options:
-     -h host           host where the tar file will be extracted
-     -s shareName      share name where the tar file will be extracted
+     -h host         host where the tar file will be extracted
+     -s shareName    share name where the tar file will be extracted
 
   Other options:
-     -f                this is a full tar archive
-     -p                inplace - don't put reverse deltas into 2nd most
-                       recent backup
+     -f              this is a full tar archive
+     -P              inplace - don't put reverse deltas into 2nd most
+                     recent backup
+     -p              don't show progress
 EOF
     exit(1);
 }
@@ -108,7 +109,7 @@ BackupPC::XS::Lib::logLevelSet($Conf{XferLogLevel});
 my @Backups = $bpc->BackupInfoRead($client);
 
 my($lastBkupIdx, $lastBkupNum, $newBkupNum, $newBkupIdx);
-my($Inode, $Inode0);
+my($PaxHdrGlobal);
 
 $newBkupIdx  = @Backups - 1;
 $newBkupNum  = $Backups[$newBkupIdx]{num};
@@ -119,12 +120,20 @@ my $Compress = $Backups[$newBkupIdx]{compress};
 # the previous one
 #
 my($AttrNew, $AttrOld);
+my($DeltaNew, $DeltaOld);
 
-$AttrNew = BackupPC::XS::AttribCache::new($client, $newBkupNum, $ShareNameUM,
-                                      $Backups[$newBkupIdx]{compress});
-$Inode = $Inode0 = $Backups[$newBkupIdx]{inodeLast};
+$AttrNew  = BackupPC::XS::AttribCache::new($client, $newBkupNum, $ShareNameUM,
+                                           $Backups[$newBkupIdx]{compress});
+$DeltaNew = BackupPC::XS::DeltaRefCnt::new("$TopDir/pc/$client/$newBkupNum");
+$AttrNew->setDeltaInfo($DeltaNew);
 
-my $Inplace = $opts{p};
+my $Inode = 1;
+for ( my $i = 0 ; $i < @Backups ; $i++ ) {
+    $Inode = $Backups[$i]{inodeLast} + 1 if ( $Inode <= $Backups[$i]{inodeLast} );
+}
+my $Inode0 = $Inode;
+
+my $Inplace = $opts{P};
 if ( !$Inplace ) {
     $lastBkupIdx = $newBkupIdx - 1;
     if ( $lastBkupIdx < 0 ) {
@@ -132,11 +141,11 @@ if ( !$Inplace ) {
         exit(1);
     }
     $lastBkupNum = $Backups[$lastBkupIdx]{num};
-    $AttrOld = BackupPC::XS::AttribCache::new($client, $lastBkupNum, $ShareNameUM,
-                                      $Backups[$lastBkupIdx]{compress});
+    $AttrOld  = BackupPC::XS::AttribCache::new($client, $lastBkupNum, $ShareNameUM,
+                                               $Backups[$lastBkupIdx]{compress});
+    $DeltaOld = BackupPC::XS::DeltaRefCnt::new("$TopDir/pc/$client/$lastBkupNum");
+    $AttrOld->setDeltaInfo($DeltaOld);
 }
-
-BackupPC::XS::PoolRefCnt::DeltaFileInit("$TopDir/pc/$client");
 
 #
 # This constant and the line of code below that uses it is borrowed
@@ -150,9 +159,10 @@ my $tar_unpack_header
     = 'Z100 A8 A8 A8 a12 A12 A8 A1 Z100 A6 A2 Z32 Z32 A8 A8 A155 x12';
 my $tar_header_length = 512;
 
-my $BufSize  = 1048576;     # 1MB or 2^20
-my $MaxFiles = 20;
-my $Errors   = 0;
+my $BufSize       = 1048576;     # 1MB or 2^20
+my $MaxFiles      = 20;
+my $Errors        = 0;
+my $FatalErrors   = 0;
 
 my $ExistFileCnt      = 0;
 my $ExistFileSize     = 0;
@@ -193,6 +203,7 @@ sub TarRead
             $Abort = 1;
             $AbortReason = "Unexpected end of tar archive";
             $Errors++;
+            $FatalErrors++;
             return;
         }
         $numBytes += $newBytes;
@@ -225,6 +236,7 @@ sub TarReadFileInfo
     my($name, $mode, $uid, $gid, $size, $mtime, $chksum, $type,
        $linkname, $magic, $version, $uname, $gname, $devmajor,
        $devminor, $prefix);
+    my $paxHdr = {};
 
     while ( 1 ) {
         $head = TarReadHeader($fh);
@@ -289,24 +301,53 @@ sub TarReadFileInfo
         if (unpack ("%16C*", $head) != $chksum) {
            print("$name: checksum error at " . sysseek($fh, 0, 1) , "\n");
            $Errors++;
+           $FatalErrors++;
         }
+
         if ( $type eq "L" ) {
             $longName = TarRead($fh, $size) || return;
             # remove trailing NULL
-            $longName = substr($longName, 0, $size - 1);
+            $paxHdr = {};
+            $paxHdr->{path} = substr($longName, 0, $size - 1);
             TarFlush($fh, $size);
             next;
         } elsif ( $type eq "K" ) {
             $longLink = TarRead($fh, $size) || return;
             # remove trailing NULL
-            $longLink = substr($longLink, 0, $size - 1);
+            $paxHdr->{linkpath} = substr($longLink, 0, $size - 1);
             TarFlush($fh, $size);
             next;
+        } elsif ( $type eq "x" || $type eq "g" ) {
+            my $paxStr = TarRead($fh, $size) || return;
+            $paxHdr = {};
+            while ( $paxStr =~ /(\d+) (.*?)=(.*?)\n(.*)/s ) {
+                $paxHdr->{$2} = $3;
+                print("Got pax header $2 -> $3\n") if ( $Conf{XferLogLevel} >= 6 );
+                $paxStr = $4;
+            }
+            TarFlush($fh, $size);
+            if ( $type eq "g" ) {
+                $PaxHdrGlobal = $paxHdr;
+                $paxHdr = {};
+            }
+            next;
         }
+
+        #
+        # merge global headers if defined, then override extracted file meta data
+        #
+        $paxHdr = { %$PaxHdrGlobal, %$paxHdr } if ( $PaxHdrGlobal );
+        $name     = $paxHdr->{path}     if ( defined($paxHdr->{path}) );
+        $linkname = $paxHdr->{linkpath} if ( defined($paxHdr->{linkpath}) );
+        $size     = $paxHdr->{size}     if ( defined($paxHdr->{size}) );
+        $mtime    = $paxHdr->{mtime}    if ( defined($paxHdr->{mtime}) );
+        $uid      = $paxHdr->{uid}      if ( defined($paxHdr->{uid}) );
+        $gid      = $paxHdr->{gid}      if ( defined($paxHdr->{gid}) );
+        $uname    = $paxHdr->{uname}    if ( defined($paxHdr->{uname}) );
+        $gname    = $paxHdr->{gname}    if ( defined($paxHdr->{gname}) );
+
         printf("Got file '%s', mode 0%o, size %g, type %d\n",
                 $name, $mode, $size, $type) if ( $Conf{XferLogLevel} >= 3 );
-        $name     = $longName if ( defined($longName) );
-        $linkname = $longLink if ( defined($longLink) );
 
         #
         # Map client charset encodings to utf8
@@ -368,61 +409,78 @@ sub moveFileToOld
         #
         # A new file will be created, so add delete attribute to old
         #
-        $AttrOld->set($f->{name}, { type => BPC_FTYPE_DELETED }) if ( $AttrOld );
+        if ( $AttrOld ) {
+            $AttrOld->set($f->{name}, { type => BPC_FTYPE_DELETED });
+            print("moveFileToOld: added $f->{name} as BPC_FTYPE_DELETED in old\n")
+                                                if ( $Conf{XferLogLevel} >= 5 );
+        }
         return;
     }
-    if ( !$AttrOld || $AttrOld->get($f->{name}) ) {
+    print("moveFileToOld: $a->{name}, $f->{name}, links = $a->{nlinks}, type = $a->{type}\n")
+                                        if ( $Conf{XferLogLevel} >= 5 );
+    if ( $a->{type} != BPC_FTYPE_DIR ) {
         if ( $a->{nlinks} > 0 ) {
+	    if ( $AttrOld ) {
+		if ( !$AttrOld->getInode($a->{inode}) ) {
+                    #
+                    # copy inode to old if it isn't already there
+                    #
+		    $AttrOld->setInode($a->{inode}, $a);
+		    $DeltaOld->update($a->{compress}, $a->{digest}, 1);
+		}
+                #
+                # copy to old - no need for refeence count update since
+                # inode is already there
+                #
+		$AttrOld->set($f->{name}, $a, 1) if ( !$AttrOld->get($f->{name}) );
+	    }
             $a->{nlinks}--;
             if ( $a->{nlinks} <= 0 ) {
                 $AttrNew->deleteInode($a->{inode});
-                BackupPC::XS::PoolRefCnt::DeltaUpdate($a->{compress}, $a->{digest}, -1);
+                $DeltaNew->update($a->{compress}, $a->{digest}, -1);
             } else {
                 $AttrNew->setInode($a->{inode}, $a);
             }
         } else {
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($a->{compress}, $a->{digest}, -1)
-                                            if ( length($a->{digest}) );
+            $DeltaNew->update($a->{compress}, $a->{digest}, -1);
+            if ( $AttrOld && !$AttrOld->get($f->{name}) && $AttrOld->set($f->{name}, $a, 1) ) {
+                $DeltaOld->update($a->{compress}, $a->{digest}, 1);
+            }
         }
         $AttrNew->delete($f->{name});
-        if ( $a->{type} == BPC_FTYPE_DIR ) {
+    } else {
+        if ( !$AttrOld || $AttrOld->get($f->{name}) ) {
             #
             # Delete the directory tree, including updating reference counts
             #
             my $pathNew = $AttrNew->getFullMangledPath($f->{name});
-            BackupPC::DirOps::RmTreeQuiet($bpc, $pathNew, $a->{compress});
+            print("moveFileToOld(..., $f->{name}): deleting $pathNew\n")
+                                         if ( $Conf{XferLogLevel} >= 3 );
+            BackupPC::DirOps::RmTreeQuiet($bpc, $pathNew, $a->{compress}, $DeltaNew, $AttrNew);
+        } else {
+            #
+            # For a directory we need to move it to old, and copy
+            # any inodes that are referenced below this directory.
+            # Also update the reference counts for the moved files.
+            #
+            my $pathNew = $AttrNew->getFullMangledPath($f->{name});
+            my $pathOld = $AttrOld->getFullMangledPath($f->{name});
+            print("moveFileToOld(..., $f->{name}): renaming $pathNew to $pathOld\n")
+                                     if ( $Conf{XferLogLevel} >= 3 );
+            pathCreate($pathOld);
+            $AttrNew->flush(0, $f->{name});
+            if ( !rename($pathNew, $pathOld) ) {
+                printf("moveFileToOld(..., %s: can't rename %s to %s ($!, %d, %d, %d)\n",
+			    $f->{name}, $pathNew, $pathOld, -e $pathNew, -e $pathOld, -d $pathOld);
+                $Errors++;
+            } else {
+                BackupPC::XS::DirOps::refCountAll($pathOld, $a->{compress}, -1, $DeltaNew);
+                BackupPC::XS::DirOps::refCountAll($pathOld, $a->{compress},  1, $DeltaOld);
+                copyInodes($f->{name});
+                $AttrOld->set($f->{name}, $a, 1);
+            }
         }
-        return;
-    }
-
-    if ( $a->{nlinks} > 0 ) {
-        #
-        # only write the inode if it doesn't exist in old;
-        # in that case, increase the pool reference count
-        #
-        if ( $AttrOld->set($f->{name}, $a, 1) ) {
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($a->{compress}, $a->{digest}, 1);
-        }
-    } else {
-        $AttrOld->set($f->{name}, $a);
-    }
-    $AttrNew->delete($f->{name});
-    if ( $a->{type} == BPC_FTYPE_DIR ) {
-        #
-        # For a directory we need to move it to old, and copy
-        # any inodes that are referenced below this directory.
-        #
-        my $pathNew = $AttrNew->getFullMangledPath($f->{name});
-        my $pathOld = $AttrOld->getFullMangledPath($f->{name});
-        print("moveFileToOld(..., $f->{name}): renaming $pathNew to $pathOld\n")
-                                 if ( $Conf{XferLogLevel} >= 3 );
-        $AttrNew->flush(0, $f->{name});
-        copyInodes($f->{name});
-        pathCreate($pathOld);
-        if ( !rename($pathNew, $pathOld) ) {
-            print("moveFileToOld(..., $f->{name}): can't rename $pathNew to $pathOld\n");
-            $Errors++;
-        }
+        $AttrNew->delete($f->{name});
     }
 }
 
@@ -512,6 +570,7 @@ sub TarReadFile
                     print("Unexpected end of tar archive during read\n");
                     $AbortReason = "Unexpected end of tar archive";
                     $Errors++;
+                    $FatalErrors++;
                 }
                 $Abort = 1;
                 print("Removing partial file $f->{name}\n")
@@ -525,9 +584,6 @@ sub TarReadFile
         ($exist, $digest) = processClose($poolWrite, $f->{size});
         if ( $a->{digest} eq $digest ) {
             logFileAction("same", $f) if ( $Conf{XferLogLevel} >= 1 );
-            $ExistFileCnt++;
-            $ExistFileSize     += $f->{size};
-            $ExistFileCompSize += -s $a->{poolPath} if ( -f $a->{poolPath} );
             $same = 1 if ( $a->{nlinks} == 0 );
         }
         if ( !$same ) {
@@ -567,7 +623,7 @@ sub TarReadFile
                 $aTarget->{nlinks} = 2;
                 $AttrNew->set($target,    $aTarget);
                 $AttrNew->set($f->{name}, $aTarget);
-                BackupPC::XS::PoolRefCnt::DeltaUpdate($aTarget->{compress}, $aTarget->{digest}, 1)
+                $DeltaNew->update($aTarget->{compress}, $aTarget->{digest}, 1)
                                                     if ( length($aTarget->{digest}) );
                 logFileAction("link", $f)
                             if ( $Conf{XferLogLevel} >= 1 );
@@ -617,8 +673,7 @@ sub TarReadFile
                     #
                     if ( $AttrOld && !$AttrOld->getInode($aTarget->{inode}) ) {
                         $AttrOld->setInode($aTarget->{inode}, $aTarget);
-                        BackupPC::XS::PoolRefCnt::DeltaUpdate($aTarget->{compress},
-                                                            $aTarget->{digest}, 1);
+                        $DeltaOld->update($aTarget->{compress}, $aTarget->{digest}, 1);
                     }
                     $f->{nlinks}++;
                     $AttrNew->set($f->{name}, $f);
@@ -737,7 +792,7 @@ sub TarReadFile
             #
             if ( $AttrOld && !$AttrOld->get($f->{name}) ) {
                 if ( $AttrOld->set($f->{name}, $a, 1) ) {
-                    BackupPC::XS::PoolRefCnt::DeltaUpdate($newCompress, $digest, 1);
+                    $DeltaOld->update($newCompress, $digest, 1);
                 }
             }
             $f->{inode}  = $a->{inode};
@@ -747,7 +802,7 @@ sub TarReadFile
         #
         # file is new or changed; update ref counts
         #
-        BackupPC::XS::PoolRefCnt::DeltaUpdate($newCompress, $digest, 1)
+        $DeltaNew->update($newCompress, $digest, 1)
                                                 if ( $digest ne "" );
     }
 
@@ -839,7 +894,7 @@ sub pathCreate
     unlink($fullPath) if ( -e $fullPath );
     eval { mkpath($fullPath, 0, 0777) };
     if ( $@ ) {
-        print("Can't create $fullPath\n");
+        print("Can't create $fullPath ($!)\n");
         $Errors++;
         return -1;
     }
@@ -878,7 +933,7 @@ sub exitMesg
     #
     if ( $AttrNew ) {
         #
-        # Make sure the top-level share has an attibute entry.
+        # Make sure the top-level share has an attribute entry.
         # Normally that is added when any directory appears in the archive.
         # But if the archive only has files, we'll never add entries for
         # the parent directories.
@@ -909,8 +964,16 @@ sub exitMesg
         $bpc->flushXSLibMesgs();
     }
 
-    BackupPC::XS::PoolRefCnt::DeltaPrint() if ( $Conf{XferLogLevel} >= 6 );
-    BackupPC::XS::PoolRefCnt::DeltaFileFlush();
+    if ( $Conf{XferLogLevel} >= 6 ) {
+        print("RefCnt Deltas for new #$newBkupNum:\n");
+        $DeltaNew->print();
+        if ( $DeltaOld ) {
+            print("RefCnt Deltas for old #$lastBkupNum\n");
+            $DeltaOld->print();
+        }
+    }
+    $DeltaNew->flush();
+    $DeltaOld->flush() if ( $DeltaOld );
 
     if ( $Abort ) {
         print("BackupPC_tarExtact aborting ($AbortReason)\n");
@@ -928,7 +991,7 @@ sub exitMesg
         . " $ExistFileCnt filesExist, $ExistFileSize sizeExist, $ExistFileCompSize sizeExistComp,"
         . " $TotalFileCnt filesTotal, $TotalFileSize sizeTotal,"
         . " $NewFileCnt filesNew, $NewFileSize sizeNew, $NewFileCompSize sizeNewComp, $Inode inodeLast\n");
-    exit($Errors ? 1 : 0);
+    exit($FatalErrors ? 1 : 0);
 }
 
 #######################################################################
@@ -963,6 +1026,7 @@ sub dirCacheNewDir
     my $all = $AttrNew->getAll($dir);
     $bpc->flushXSLibMesgs();
     foreach my $name ( keys(%$all) ) {
+        next if ( $name eq "." || $name eq ".." );
         print("dirCacheNewDir: populating dir = $dir with $name\n")
                      if ( $Conf{XferLogLevel} >= 4 );
         $DirCache{$dir}{$name} = 1;
@@ -1022,6 +1086,11 @@ sub dirCacheFlush
         foreach my $file ( keys(%{$DirCache{$d}}) ) {
             my $name = "$d/$file";
             my $a = $AttrNew->get($name);
+            if ( !$a ) {
+                print("dirCacheFlush($dir): skipping $d/$file since it has no attributes\n")
+                                                    if ( $Conf{XferLogLevel} >= 5 );
+                next;
+            }
             if ( $a && $a->{inode} >= $Inode0 ) {
                 #
                 # shouldn't happen - but if it's a new file then
@@ -1048,7 +1117,7 @@ sub dirCacheFlush
                     print("dirCacheFlush(): unlink($name) -> setting old inode (nlinks = $a->{nlinks})\n")
                                                     if ( $Conf{XferLogLevel} >= 3 );
                     $AttrOld->setInode($a->{inode}, $a);
-                    BackupPC::XS::PoolRefCnt::DeltaUpdate($a->{compress}, $a->{digest}, 1);
+                    $DeltaOld->update($a->{compress}, $a->{digest}, 1);
                 }
                 #
                 # If this file is older than this backup, then move it
@@ -1067,7 +1136,7 @@ sub dirCacheFlush
                 $a->{nlinks}--;
                 if ( $a->{nlinks} <= 0 ) {
                     $AttrNew->deleteInode($a->{inode});
-                    BackupPC::XS::PoolRefCnt::DeltaUpdate($a->{compress}, $a->{digest}, -1);
+                    $DeltaNew->update($a->{compress}, $a->{digest}, -1);
                 } else {
                     $AttrNew->setInode($a->{inode}, $a);
                 }
@@ -1089,10 +1158,9 @@ sub copyInodes
 
     my $dirPath  = $AttrNew->getFullMangledPath($dirName);
 
-    print("copyInodes: dirName = $dirName, dirPath = $dirPath\n") if ( $Conf{XferLogLevel} >= 3 );
+    print("copyInodes: dirName = $dirName, dirPath = $dirPath\n") if ( $Conf{XferLogLevel} >= 4 );
 
     my $attrAll = $AttrNew->getAll($dirName);
-    print("copyInodes: finished getAll()\n");
     $bpc->flushXSLibMesgs();
 
     #
@@ -1116,6 +1184,7 @@ sub copyInodes
     }
 
     foreach my $fileUM ( keys(%$attrAll) ) {
+        next if ( $fileUM eq "." || $fileUM eq ".." );
         my $a = $attrAll->{$fileUM};
         if ( $a->{type} == BPC_FTYPE_DIR ) {
             #
@@ -1133,7 +1202,7 @@ sub copyInodes
         if ( !defined($AttrOld->getInode($a->{inode})) ) {
             print("copyInodes($dirName): $fileUM moving inode $a->{inode} to old\n") if ( $Conf{XferLogLevel} >= 5 );
             $AttrOld->setInode($a->{inode}, $aInode);
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($Compress, $aInode->{digest}, 1);
+            $DeltaOld->update($Compress, $aInode->{digest}, 1);
         }
 
         #
@@ -1143,7 +1212,7 @@ sub copyInodes
         if ( $aInode->{nlinks} == 0 ) {
             $AttrNew->deleteInode($a->{inode});
             print("copyInodes($dirName): $fileUM deleting inode $a->{inode} in new\n") if ( $Conf{XferLogLevel} >= 5 );
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($aInode->{compress}, $aInode->{digest}, -1);
+            $DeltaNew->update($aInode->{compress}, $aInode->{digest}, -1);
         } else {
             $AttrNew->setInode($a->{inode}, $aInode);
         }
@@ -1153,5 +1222,5 @@ sub copyInodes
 
 sub printProgress
 {
-    print("__bpc_progress_fileCnt__ $FileCnt\n");
+    print("__bpc_progress_fileCnt__ $FileCnt\n") if ( !$opts{p} );
 }

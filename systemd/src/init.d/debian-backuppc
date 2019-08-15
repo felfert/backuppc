@@ -23,7 +23,7 @@ set -e
 #
 BINDIR=__INSTALLDIR__/bin
 DATADIR=__TOPDIR__
-LOGDIR=__LOGDIR__
+RUNDIR=__RUNDIR__
 USER=__BACKUPPCUSER__
 #
 NAME=backuppc
@@ -31,30 +31,36 @@ DAEMON=BackupPC
 
 test -x $BINDIR/$DAEMON || exit 0
 
+if [ ! -d $RUNDIR ]; then
+    mkdir -p $RUNDIR
+    chown $USER $RUNDIR
+    chmod 0755 $RUNDIR
+fi
+
 case "$1" in
   start)
     echo -n "Starting $NAME: "
-    start-stop-daemon --start --pidfile $LOGDIR/BackupPC.pid \
+    start-stop-daemon --start --pidfile $RUNDIR/BackupPC.pid \
 			    -c $USER --exec $BINDIR/$DAEMON -- -d
     echo "ok."
     ;;
   stop)
     echo -n "Stopping $NAME: "
-    start-stop-daemon --stop --pidfile $LOGDIR/BackupPC.pid -u $USER \
+    start-stop-daemon --stop --pidfile $RUNDIR/BackupPC.pid -u $USER \
 			    --oknodo --retry 30 -x /usr/bin/perl
     echo "ok."
       ;;
   restart)
     echo -n "Restarting $NAME: "
-    start-stop-daemon --stop --pidfile $LOGDIR/BackupPC.pid -u $USER \
+    start-stop-daemon --stop --pidfile $RUNDIR/BackupPC.pid -u $USER \
 			    --oknodo --retry 30 -x /usr/bin/perl
-    start-stop-daemon --start --pidfile $LOGDIR/BackupPC.pid \
+    start-stop-daemon --start --pidfile $RUNDIR/BackupPC.pid \
 			    -c $USER --exec $BINDIR/$DAEMON -- -d
     echo "ok."
     ;;
   reload|force-reload)
     echo "Reloading $NAME configuration files"
-    start-stop-daemon --stop --pidfile $LOGDIR/BackupPC.pid \
+    start-stop-daemon --stop --pidfile $RUNDIR/BackupPC.pid \
 			    --signal 1 -x /usr/bin/perl
     ;;
   *)

@@ -13,7 +13,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2002-2013  Craig Barratt
+#   Copyright (C) 2002-2018  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 30 Nov 2013.
+# Version 4.2.2, released 22 May 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -104,7 +104,7 @@ sub dirNotDeleted
             $file = $share;
             $last = 1;
         }
-        next if ( !-d $p || !-f "$p/attrib" );
+        next if ( !-d $p || !defined(BackupPC::DirOps::dirContainsAttrib($m->{bpc}, $dir)) );
         my $attr = BackupPC::XS::Attrib::new($compress);
         if ( !$attr->read($p) ) {
             push(@{$m->{error}}, "Can't read attribute file in $p: " . $attr->errStr());
@@ -200,17 +200,6 @@ sub dirCache
                         = $m->{bpc}->{Conf}{ClientCharsetLegacy} || "iso-8859-1";
             }
 
-            my $dirInfo = BackupPC::DirOps::dirRead($m->{bpc}, $path, $dirOpts);
-            if ( !defined($dirInfo) ) {
-                if ( $i == $m->{idx} ) {
-                    #
-                    # Oops, directory doesn't exist.
-                    #
-                    $m->{files} = undef;
-                    return;
-                }
-                next;
-            }
             my $attr;
             if ( $mangle ) {
                 # TODO: removed charset attribOpts - need to do at this level?
@@ -220,78 +209,120 @@ sub dirCache
                     $attr = undef;
                 }
             }
-            foreach my $entry ( @$dirInfo ) {
-                my $file = $1 if ( $entry->{name} =~ /(.*)/s );
-                my $fileUM = $file;
-                $fileUM = $m->{bpc}->fileNameUnmangle($fileUM) if ( $mangle );
-                #print(STDERR "Doing $fileUM\n");
+            if ( $attr && length($attr->digest()) ) {
                 #
-                # skip special files
+                # new style V4 attributes - everything is in the attrib file
                 #
-                next if ( defined($m->{files}{$fileUM})
-                        || $file eq ".."
-                        || $file eq "."
-                        || $file eq "backupInfo"
-                        || $mangle && $file eq "attrib" );
-
-                if ( defined($attr) && defined(my $a = $attr->get($fileUM)) ) {
-                    $m->{files}{$fileUM} = $a;
+                my $attrAll = $attr->get();
+                foreach my $fileUM ( keys(%$attrAll) ) {
                     #
-                    # skip directories in earlier backups (each backup always
-                    # has the complete directory tree).
+                    # skip directories in earlier backups (in V3 each backup
+                    # always has the complete directory tree).
                     #
+                    my $a = $attrAll->{$fileUM};
                     next if ( $i < $m->{idx} && $a->{type} == BPC_FTYPE_DIR );
-                    $attr->delete($fileUM);
-                } else {
-                    #
-                    # Very expensive in the non-attribute case when compresseion
-                    # is on.  We have to stat the file and read compressed files
-                    # to determine their size.
-                    #
-                    my $realPath = "$path/$file";
-
-                    from_to($realPath, "utf8", $attribOpts->{charsetLegacy})
-                                    if ( $attribOpts->{charsetLegacy} ne "" );
-
-                    my @s = stat($realPath);
-                    next if ( $i < $m->{idx} && -d _ );
-                    $m->{files}{$fileUM} = {
-                        type  => -d _ ? BPC_FTYPE_DIR : BPC_FTYPE_FILE,
-                        mode  => $s[2],
-                        uid   => $s[4],
-                        gid   => $s[5],
-                        size  => -f _ ? $s[7] : 0,
-                        mtime => $s[9],
-                    };
-                    if ( $compress && -f _ ) {
-                        #
-                        # Compute the correct size by reading the whole file
-                        #
-                        my $f = BackupPC::XS::FileZIO::open($realPath, 0, $compress);
-                        if ( !defined($f) ) {
-                            push(@{$m->{error}}, "Can't open $realPath");
+                    #print(STDERR "Adding $fileUM with type $a->{type}\n");
+                    if ( !$m->{files}{$fileUM} ) {
+                        $m->{files}{$fileUM}               = $a;
+                        $attr->delete($fileUM);
+                        ($m->{files}{$fileUM}{relPath}     = "$dir/$fileUM") =~ s{//+}{/}g;
+                        if ( length($a->{digest}) ) {
+                            $m->{files}{$fileUM}{fullPath} = $m->{bpc}->MD52Path($a->{digest},
+                                                                                 $compress);
                         } else {
-                            my($data, $size);
-                            while ( $f->read(\$data, 65636 * 8) > 0 ) {
-                                $size += length($data);
-                            }
-                            $f->close;
-                            $m->{files}{$fileUM}{size} = $size;
+                            $m->{files}{$fileUM}{fullPath} = "/dev/null";
                         }
+                        $m->{files}{$fileUM}{backupNum}    = $backupNum;
+                        $m->{files}{$fileUM}{compress}     = $compress;
                     }
                 }
-                ($m->{files}{$fileUM}{relPath}    = "$dir/$fileUM") =~ s{//+}{/}g;
-                ($m->{files}{$fileUM}{sharePathM} = "$sharePathM/$file")
-                                                                   =~ s{//+}{/}g;
-                ($m->{files}{$fileUM}{fullPath}   = "$path/$file") =~ s{//+}{/}g;
-                from_to($m->{files}{$fileUM}{fullPath}, "utf8", $attribOpts->{charsetLegacy})
-                                    if ( $attribOpts->{charsetLegacy} ne "" );
-                $m->{files}{$fileUM}{backupNum}   = $backupNum;
-                $m->{files}{$fileUM}{compress}    = $compress;
-                $m->{files}{$fileUM}{nlink}       = $entry->{nlink}
-                                                        if ( $m->{dirOpts}{nlink} );
-                $m->{files}{$fileUM}{inode}       = $entry->{inode}
-                                                        if ( $m->{dirOpts}{inode} );
+            } else {
+                my $dirInfo = BackupPC::DirOps::dirRead($m->{bpc}, $path, $dirOpts);
+                if ( !defined($dirInfo) ) {
+                    if ( $i == $m->{idx} ) {
+                        #
+                        # Oops, directory doesn't exist.
+                        #
+                        $m->{files} = undef;
+                        return;
+                    }
+                    next;
+                }
+                foreach my $entry ( @$dirInfo ) {
+                    my $file = $1 if ( $entry->{name} =~ /(.*)/s );
+                    my $fileUM = $file;
+                    $fileUM = $m->{bpc}->fileNameUnmangle($fileUM) if ( $mangle );
+                    #
+                    # skip special files
+                    #
+                    next if ( defined($m->{files}{$fileUM})
+                            || $file eq ".."
+                            || $file eq "."
+                            || $file eq "backupInfo"
+                            || $file eq "refCnt"
+                            || $mangle && $file =~ /^attrib/ );
+
+                    if ( defined($attr) && defined(my $a = $attr->get($fileUM)) ) {
+                        #
+                        # skip directories in earlier backups (in V3 each backup
+                        # always has the complete directory tree).
+                        #
+                        next if ( $i < $m->{idx} && $a->{type} == BPC_FTYPE_DIR );
+                        #print(STDERR "Adding $fileUM with type $a->{type}\n");
+                        $m->{files}{$fileUM} ||= $a;
+                        $attr->delete($fileUM);
+                    } else {
+                        #print(STDERR "No attrib; determining attribs of $fileUM\n");
+                        #
+                        # Very expensive in the non-attribute case when compresseion
+                        # is on.  We have to stat the file and read compressed files
+                        # to determine their size.
+                        #
+                        my $realPath = "$path/$file";
+
+                        from_to($realPath, "utf8", $attribOpts->{charsetLegacy})
+                                        if ( $attribOpts->{charsetLegacy} ne "" );
+
+                        my @s = stat($realPath);
+                        next if ( $i < $m->{idx} && -d _ );
+                        $m->{files}{$fileUM} = {
+                            type  => -d _ ? BPC_FTYPE_DIR : BPC_FTYPE_FILE,
+                            mode  => $s[2],
+                            uid   => $s[4],
+                            gid   => $s[5],
+                            size  => -f _ ? $s[7] : 0,
+                            mtime => $s[9],
+                        };
+                        if ( $compress && -f _ ) {
+                            #
+                            # Compute the correct size by reading the whole file
+                            #
+                            my $f = BackupPC::XS::FileZIO::open($realPath, 0, $compress);
+                            if ( !defined($f) ) {
+                                push(@{$m->{error}}, "Can't open $realPath");
+                            } else {
+                                my($data, $size);
+                                while ( $f->read(\$data, 65636 * 8) > 0 ) {
+                                    $size += length($data);
+                                }
+                                $f->close;
+                                $m->{files}{$fileUM}{size} = $size;
+                            }
+                        }
+                    }
+                    ($m->{files}{$fileUM}{relPath}    = "$dir/$fileUM") =~ s{//+}{/}g;
+                    ($m->{files}{$fileUM}{sharePathM} = "$sharePathM/$file")
+                                                                       =~ s{//+}{/}g;
+                    ($m->{files}{$fileUM}{fullPath}   = "$path/$file") =~ s{//+}{/}g;
+                    from_to($m->{files}{$fileUM}{fullPath}, "utf8", $attribOpts->{charsetLegacy})
+                                        if ( $attribOpts->{charsetLegacy} ne "" );
+                    $m->{files}{$fileUM}{backupNum}   = $backupNum;
+                    $m->{files}{$fileUM}{compress}    = $compress;
+                    $m->{files}{$fileUM}{nlink}       = $entry->{nlink}
+                                                            if ( $m->{dirOpts}{nlink} );
+                    $m->{files}{$fileUM}{inode}       = $entry->{inode}
+                                                            if ( $m->{dirOpts}{inode} );
+                }
             }
             #
             # Also include deleted files
@@ -368,37 +399,37 @@ sub dirCache
 
             my $attr = BackupPC::XS::Attrib::new($compress);
             my $attrAll;
-            if ( -f "$path/attrib" ) {
-                if ( !$attr->read($path, "attrib") ) {
+            if ( !$attr->read($path, "attrib") ) {
+                if ( -f "$path/attrib" ) {
                     push(@{$m->{error}}, "Can't read attribute file in $path\n");
-                } else {
-                    #print(STDERR "Got attr\n");
-                    $attrAll = $attr->get();
-                    foreach my $fileUM ( keys(%$attrAll) ) {
-                        my $a = $attrAll->{$fileUM};
-                        if ( $a->{type} == BPC_FTYPE_DELETED ) {
-                            #print("deleting $fileUM\n");
-                            delete($m->{files}{$fileUM});
-                            delete($hardlinks->{$fileUM});
-                            next;
-                        }
-                        if ( $a->{nlinks} > 0 ) {
-                            $a = $m->hardLinkGet($a, $i);
-                            $hardlinks->{$fileUM} = 1;
-                        }
-
-                        $m->{files}{$fileUM}               = $a;
-                        ($m->{files}{$fileUM}{relPath}     = "$dir/$fileUM") =~ s{//+}{/}g;
-                        if ( length($a->{digest}) ) {
-                            $m->{files}{$fileUM}{fullPath} = $m->{bpc}->MD52Path($a->{digest},
-                                                                                 $compress);
-                        } else {
-                            $m->{files}{$fileUM}{fullPath} = "/dev/null";
-                        }
-                        $m->{files}{$fileUM}{backupNum}    = $backupNum;
-                        $m->{files}{$fileUM}{compress}     = $compress;
-                        $m->{files}{$fileUM}{inode}        = $a->{inode};
+                }
+            } else {
+                #print(STDERR "Got attr\n");
+                $attrAll = $attr->get();
+                foreach my $fileUM ( keys(%$attrAll) ) {
+                    my $a = $attrAll->{$fileUM};
+                    if ( $a->{type} == BPC_FTYPE_DELETED ) {
+                        #print(STDERR "deleting $fileUM\n");
+                        delete($m->{files}{$fileUM});
+                        delete($hardlinks->{$fileUM});
+                        next;
                     }
+                    if ( $a->{nlinks} > 0 ) {
+                        $a = $m->hardLinkGet($a, $i);
+                        $hardlinks->{$fileUM} = 1;
+                    }
+
+                    $m->{files}{$fileUM}               = $a;
+                    ($m->{files}{$fileUM}{relPath}     = "$dir/$fileUM") =~ s{//+}{/}g;
+                    if ( length($a->{digest}) ) {
+                        $m->{files}{$fileUM}{fullPath} = $m->{bpc}->MD52Path($a->{digest},
+                                                                             $compress);
+                    } else {
+                        $m->{files}{$fileUM}{fullPath} = "/dev/null";
+                    }
+                    $m->{files}{$fileUM}{backupNum}    = $backupNum;
+                    $m->{files}{$fileUM}{compress}     = $compress;
+                    $m->{files}{$fileUM}{inode}        = $a->{inode};
                 }
             }
 
@@ -441,11 +472,12 @@ sub shareList
         closedir(DIR);
         foreach my $file ( @dir ) {
             $file = $1 if ( $file =~ /(.*)/s );
-            next if ( $file eq "attrib" && $mangle
+            next if ( $file =~ /^attrib/ && $mangle
                    || $file eq "."
                    || $file eq ".."
                    || $file eq "backupInfo"
                    || $file eq "inode"
+                   || $file eq "refCnt"
                 );
             my $fileUM = $file;
             $fileUM = $m->{bpc}->fileNameUnmangle($fileUM) if ( $mangle );
@@ -641,69 +673,89 @@ sub dirHistory
 		$attr = undef;
 	    }
 	}
-        foreach my $entry ( @$dirInfo ) {
-            my $file = $1 if ( $entry->{name} =~ /(.*)/s );
-            my $fileUM = $file;
-            $fileUM = $m->{bpc}->fileNameUnmangle($fileUM) if ( $mangle );
-            #print(STDERR "Doing $fileUM\n");
-	    #
-	    # skip special files
-	    #
-            next if (  $file eq ".."
-		    || $file eq "."
-		    || $mangle && $file eq "attrib"
-		    || defined($files->{$fileUM}[$i]) );
+        if ( $attr && length($attr->digest()) ) {
+            #
+            # new style V4 attributes - everything is in the attrib file
+            #
+            my $attrAll = $attr->get();
+            foreach my $fileUM ( keys(%$attrAll) ) {
+                my $a = $attrAll->{$fileUM};
+                $files->{$fileUM}[$i]               = $a;
+                $attr->delete($fileUM);
+                ($files->{$fileUM}[$i]{relPath}     = "$dir/$fileUM") =~ s{//+}{/}g;
+                if ( length($a->{digest}) ) {
+                    $files->{$fileUM}[$i]{fullPath} = $m->{bpc}->MD52Path($a->{digest},
+                                                                         $compress);
+                } else {
+                    $files->{$fileUM}[$i]{fullPath} = "/dev/null";
+                }
+                $files->{$fileUM}[$i]{backupNum}    = $backupNum;
+                $files->{$fileUM}[$i]{compress}     = $compress;
+            }
+        } else {
+            foreach my $entry ( @$dirInfo ) {
+                my $file = $1 if ( $entry->{name} =~ /(.*)/s );
+                my $fileUM = $file;
+                $fileUM = $m->{bpc}->fileNameUnmangle($fileUM) if ( $mangle );
+                #print(STDERR "Doing $fileUM\n");
+                #
+                # skip special files
+                #
+                next if (  $file eq ".."
+                        || $file eq "."
+                        || $mangle && $file =~ /^attrib/
+                        || defined($files->{$fileUM}[$i]) );
 
-            my $realPath = "$path/$file";
-            from_to($realPath, "utf8", $attribOpts->{charsetLegacy})
-                            if ( $attribOpts->{charsetLegacy} ne "" );
-            my @s = stat($realPath);
-            if ( defined($attr) && defined(my $a = $attr->get($fileUM)) ) {
-                $files->{$fileUM}[$i] = $a;
-		$attr->delete($fileUM);
-            } else {
-                #
-                # Very expensive in the non-attribute case when compresseion
-                # is on.  We have to stat the file and read compressed files
-                # to determine their size.
-                #
-                $files->{$fileUM}[$i] = {
-                    type  => -d _ ? BPC_FTYPE_DIR : BPC_FTYPE_FILE,
-                    mode  => $s[2],
-                    uid   => $s[4],
-                    gid   => $s[5],
-                    size  => -f _ ? $s[7] : 0,
-                    mtime => $s[9],
-                };
-                if ( $compress && -f _ ) {
+                my $realPath = "$path/$file";
+                from_to($realPath, "utf8", $attribOpts->{charsetLegacy})
+                                if ( $attribOpts->{charsetLegacy} ne "" );
+                my @s = stat($realPath);
+                if ( defined($attr) && defined(my $a = $attr->get($fileUM)) ) {
+                    $files->{$fileUM}[$i] = $a;
+                    $attr->delete($fileUM);
+                } else {
                     #
-                    # Compute the correct size by reading the whole file
+                    # Very expensive in the non-attribute case when compresseion
+                    # is on.  We have to stat the file and read compressed files
+                    # to determine their size.
                     #
-                    my $f = BackupPC::XS::FileZIO::open("$realPath", 0, $compress);
-                    if ( !defined($f) ) {
-                        push(@{$m->{error}}, "Can't open $path/$file");
-                    } else {
-                        my($data, $size);
-                        while ( $f->read(\$data, 65636 * 8) > 0 ) {
-                            $size += length($data);
+                    $files->{$fileUM}[$i] = {
+                        type  => -d _ ? BPC_FTYPE_DIR : BPC_FTYPE_FILE,
+                        mode  => $s[2],
+                        uid   => $s[4],
+                        gid   => $s[5],
+                        size  => -f _ ? $s[7] : 0,
+                        mtime => $s[9],
+                    };
+                    if ( $compress && -f _ ) {
+                        #
+                        # Compute the correct size by reading the whole file
+                        #
+                        my $f = BackupPC::XS::FileZIO::open("$realPath", 0, $compress);
+                        if ( !defined($f) ) {
+                            push(@{$m->{error}}, "Can't open $path/$file");
+                        } else {
+                            my($data, $size);
+                            while ( $f->read(\$data, 65636 * 8) > 0 ) {
+                                $size += length($data);
+                            }
+                            $f->close;
+                            $files->{$fileUM}[$i]{size} = $size;
                         }
-                        $f->close;
-                        $files->{$fileUM}[$i]{size} = $size;
                     }
                 }
+                ($files->{$fileUM}[$i]{relPath}    = "$dir/$fileUM") =~ s{//+}{/}g;
+                ($files->{$fileUM}[$i]{sharePathM} = "$sharePathM/$file")
+                                                                    =~ s{//+}{/}g;
+                ($files->{$fileUM}[$i]{fullPath}   = "$path/$file") =~ s{//+}{/}g;
+                $files->{$fileUM}[$i]{backupNum}   = $backupNum;
+                $files->{$fileUM}[$i]{compress}    = $compress;
+                $files->{$fileUM}[$i]{nlink}       = $entry->{nlink}
+                                                        if ( $m->{dirOpts}{nlink} );
+                $files->{$fileUM}[$i]{inode}       = $entry->{inode}
+                                                        if ( $m->{dirOpts}{inode} );
             }
-            ($files->{$fileUM}[$i]{relPath}    = "$dir/$fileUM") =~ s{//+}{/}g;
-            ($files->{$fileUM}[$i]{sharePathM} = "$sharePathM/$file")
-                                                                =~ s{//+}{/}g;
-            ($files->{$fileUM}[$i]{fullPath}   = "$path/$file") =~ s{//+}{/}g;
-            $files->{$fileUM}[$i]{backupNum}   = $backupNum;
-            $files->{$fileUM}[$i]{compress}    = $compress;
-	    $files->{$fileUM}[$i]{nlink}       = $entry->{nlink}
-                                                    if ( $m->{dirOpts}{nlink} );
-	    $files->{$fileUM}[$i]{inode}       = $entry->{inode}
-                                                    if ( $m->{dirOpts}{inode} );
         }
-
 	#
 	# Flag deleted files
 	#
@@ -753,7 +805,7 @@ sub dirHistory
     # some part of the backup has changed.
     #
     for ( $i = @{$m->{backups}} - 1 ; $i >= 0 ; $i-- ) {
-        #print(STDERR "Do $i ($m->{backups}[$i]{noFill},$m->{backups}[$i]{level})\n");
+        #print(STDERR "Do $i (num = $m->{backups}[$i]{num}, fill = $m->{backups}[$i]{noFill}, level = $m->{backups}[$i]{level})\n");
 
         last if ( $m->{backups}[$i]{version} < 4 );
 
@@ -796,7 +848,7 @@ sub dirHistory
         }
 
         my $attr = BackupPC::XS::Attrib::new($compress);
-        if ( -f "$path/attrib" ) {
+        if ( BackupPC::DirOps::dirContainsAttrib($m->{bpc}, $path) ) {
             if ( !$attr->read($path) ) {
                 push(@{$m->{error}}, "Can't read attribute file in $path\n");
             } else {
@@ -899,7 +951,7 @@ sub findRecurse
         #
         # For non-depth, recurse directories after we finish current dir
         #
-        foreach my $file ( keys(%{$attr}) ) {
+        foreach my $file ( sort(keys(%{$attr})) ) {
             next if ( $attr->{$file}{type} != BPC_FTYPE_DIR );
             $m->findRecurse($backupNum, $share, "$path/$file", $depth,
 			    $callback, @callbackArgs);

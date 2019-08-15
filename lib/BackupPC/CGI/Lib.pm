@@ -11,7 +11,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2003-2013  Craig Barratt
+#   Copyright (C) 2003-2018  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 1 Dec 2013.
+# Version 4.2.2, released 3 Nov 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -143,7 +143,7 @@ sub NewRequest
     # Verify we are running as the correct user
     #
     if ( $Conf{BackupPCUserVerify}
-	    && $> != (my $uid = (getpwnam($Conf{BackupPCUser}))[2]) ) {
+	    && $> != (my $uid = getpwnam($Conf{BackupPCUser})) ) {
 	ErrorExit(eval("qq{$Lang->{Wrong_user__my_userid_is___}}"), <<EOF);
 This script needs to run as the user specified in \$Conf{BackupPCUser},
 which is set to $Conf{BackupPCUser}.
@@ -213,7 +213,7 @@ sub HostLink
 {
     my($host) = @_;
     my($s);
-    if ( defined($Hosts->{$host}) || defined($Status{$host}) ) {
+    if ( defined($Hosts->{$host}) ) {
         $s = "<a href=\"$MyURL?host=${EscURI($host)}\">$host</a>";
     } else {
         $s = $host;
@@ -358,8 +358,11 @@ sub CheckPermission
     return 0 if ( $User eq "" && $Conf{CgiAdminUsers} ne "*"
 	       || $host ne "" && !defined($Hosts->{$host}) );
     if ( $Conf{CgiAdminUserGroup} ne "" ) {
-        my($n,$p,$gid,$mem) = getgrnam($Conf{CgiAdminUserGroup});
-        $Privileged ||= ($mem =~ /\b\Q$User\E\b/);
+        for ( split(/\s+/, $Conf{CgiAdminUserGroup}) ) {
+            my ($n, $p, $gid, $mem) = getgrnam($_);
+            $Privileged ||= ( $mem =~ /\b\Q$User\E\b/ );
+            last if ( $Privileged );
+        }
     }
     if ( $Conf{CgiAdminUsers} ne "" ) {
         $Privileged ||= ($Conf{CgiAdminUsers} =~ /\b\Q$User\E\b/);
@@ -436,7 +439,7 @@ sub Header
 {
     my($title, $content, $noBrowse, $contentSub, $contentPost) = @_;
     my @adminLinks = (
-        { link => "",                      name => $Lang->{Status}},
+        { link => "?action=status",        name => $Lang->{Status}},
         { link => "?action=summary",       name => $Lang->{PC_Summary}},
         { link => "?action=editConfig",    name => $Lang->{CfgEdit_Edit_Config},
                                            priv => 1},
@@ -457,7 +460,7 @@ sub Header
     );
     my $host = $In{host};
 
-    binmode(STDOUT, ":utf8");
+    binmode(select, ":utf8");
     print $Cgi->header(-charset => "utf-8");
     print <<EOF;
 <!doctype html public "-//W3C//DTD HTML 4.01 Transitional//EN">
@@ -468,15 +471,19 @@ sub Header
 $Conf{CgiHeaders}
 <script src="$Conf{CgiImageDirURL}/sorttable.js"></script>
 </head><body onLoad="document.getElementById('NavMenu').style.height=document.body.scrollHeight">
-<a href="http://backuppc.sourceforge.net"><img src="$Conf{CgiImageDirURL}/logo.gif" hspace="5" vspace="7" border="0"></a><br>
+
+<div id="navigation-container">
+	<div id="logo-container">
+		<a href="https://backuppc.github.io/backuppc/"><img src="$Conf{CgiImageDirURL}/logo.gif"></a>
+	</div>
 EOF
 
     if ( defined($Hosts) && defined($host) && defined($Hosts->{$host}) ) {
-	print "<div class=\"NavMenu\">";
+	print "<div class=\"NavMenu section-title\">";
 	NavSectionTitle("${EscHTML($host)}");
 	print <<EOF;
 </div>
-<div class="NavMenu">
+<div class="NavMenu host">
 EOF
 	NavLink("?host=${EscURI($host)}",
 		"$host $Lang->{Home}", " class=\"navbar\"");
@@ -506,17 +513,8 @@ EOF
         }
 	print "</div>\n";
     }
-    print("<div id=\"Content\">\n$content\n");
-    if ( defined($contentSub) && ref($contentSub) eq "CODE" ) {
-	while ( (my $s = &$contentSub()) ne "" ) {
-	    print($s);
-	}
-    }
-    print($contentPost) if ( defined($contentPost) );
     print <<EOF;
-<br><br><br>
-</div>
-<div class="NavMenu" id="NavMenu" style="height:100%">
+<div class="NavMenu" id="NavMenu">
 EOF
     my $hostSelectbox = "<option value=\"#\">$Lang->{Select_a_host}</option>";
     my @hosts = GetUserHosts($Conf{CgiNavBarAdminAllHosts});
@@ -532,11 +530,9 @@ EOF
     }
     if ( @hosts >= $Conf{CgiNavBarAdminAllHosts} ) {
         print <<EOF;
-<br>
 <select onChange="document.location=this.value">
 $hostSelectbox
 </select>
-<br><br>
 EOF
     }
     if ( $Conf{CgiSearchBoxEnable} ) {
@@ -556,9 +552,17 @@ EOF
     }
 
     print <<EOF;
-<br><br><br>
 </div>
+</div> <!-- end #navigation-container -->
 EOF
+
+    print("<div id=\"Content\">\n$content\n");
+    if ( defined($contentSub) && ref($contentSub) eq "CODE" ) {
+	while ( (my $s = &$contentSub()) ne "" ) {
+	    print($s);
+	}
+    }
+    print($contentPost) if ( defined($contentPost) );
 }
 
 sub Trailer
@@ -573,7 +577,7 @@ sub NavSectionTitle
 {
     my($head) = @_;
     print <<EOF;
-<div class="NavTitle">$head</div>
+<h2 class="NavTitle">$head</h2>
 EOF
 }
 
@@ -592,6 +596,7 @@ sub NavLink
         my($class);
         $class = " class=\"NavCurrent\""
                 if ( length($link) && $ENV{REQUEST_URI} =~ /\Q$link\E$/
+                    || length($link) && $link =~ /\&host=/ && $ENV{REQUEST_URI} =~ /\Q$link\E/
                     || $link eq "" && $ENV{REQUEST_URI} !~ /\?/ );
         $link = "$MyURL$link" if ( $link eq "" || $link =~ /^\?/ );
         print <<EOF;
@@ -608,7 +613,7 @@ sub h1
 {
     my($str) = @_;
     return \<<EOF;
-<div class="h1">$str</div>
+    <h1>$str</h1>
 EOF
 }
 
@@ -616,6 +621,6 @@ sub h2
 {
     my($str) = @_;
     return \<<EOF;
-<div class="h2">$str</div>
+    <h2>$str</h2>
 EOF
 }

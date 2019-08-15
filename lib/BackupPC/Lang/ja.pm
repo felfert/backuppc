@@ -96,6 +96,9 @@ $Lang{BackupPC_Server_Status_General_Info}= <<EOF;
         <li>プールファイルシステムは \$Info{DUlastValue}%
             (\$DUlastTime 現在)、今日の最大値は \$Info{DUDailyMax}% (\$DUmaxTime)、
             昨日の最大値は \$Info{DUDailyMaxPrev}%。
+        <li>Inode プールファイルシステムは \$Info{DUInodelastValue}%
+            (\$DUlastTime 現在)、今日の最大値は \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)、
+            昨日の最大値は \$Info{DUInodeDailyMaxPrev}%。
     </ul>
 </ul>
 EOF
@@ -106,7 +109,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 <p>
 \${h2("現在実行中のジョブ")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td> ホスト </td>
     <td> 種別 </td>
     <td> ユーザ </td>
@@ -125,7 +128,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 
 \${h2("注意する必要がある失敗")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> ホスト </td>
     <td align="center"> 種別 </td>
     <td align="center"> ユーザ </td>
@@ -149,6 +152,9 @@ $Lang{BackupPC_Summary} = <<EOF;
 <li>プールファイルシステムは \$Info{DUlastValue}%
     (\$DUlastTime 現在)、今日の最大値は \$Info{DUDailyMax}% (\$DUmaxTime)、
         昨日の最大値は \$Info{DUDailyMaxPrev}%。
+<li>Inode プールファイルシステムは \$Info{DUInodelastValue}%
+    (\$DUlastTime 現在)、今日の最大値は \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)、
+    昨日の最大値は \$Info{DUInodeDailyMaxPrev}%。
 </ul>
 </p>
 
@@ -165,6 +171,7 @@ $Lang{BackupPC_Summary} = <<EOF;
 <table class="sortable" id="host_summary_backups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> ホスト </td>
     <td align="center"> ユーザ </td>
+    <td align="center"> コメント </td>
     <td align="center"> フル </td>
     <td align="center"> フル世代 (日数) </td>
     <td align="center"> フルサイズ (GiB) </td>
@@ -177,7 +184,6 @@ $Lang{BackupPC_Summary} = <<EOF;
     <td align="center"> 最終試行 </td></tr>
 \$strGood
 </table>
-<br><br>
 \${h2("バックアップが存在しないホスト")}
 <p>
 \$hostCntNone 個のホストのバックアップが存在しません。
@@ -185,7 +191,8 @@ $Lang{BackupPC_Summary} = <<EOF;
 <table class="sortable" id="host_summary_nobackups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> ホスト </td>
     <td align="center"> ユーザ </td>
-    <td align="center"> #フル </td>
+    <td align="center"> コメント </td>
+    <td align="center"> フル </td>
     <td align="center"> フル世代(日) </td>
     <td align="center"> フルサイズ(GiB) </td>
     <td align="center"> 速度(MB/s) </td>
@@ -310,6 +317,7 @@ EOF
 
 # --------------------------------
 $Lang{BackupPC__Backup_Requested_on__host} = "BackupPC: \$host のバックアップ要求";
+$Lang{BackupPC__Delete_Requested_for_a_backup_of__host} = "BackupPC: Delete Requested for a backup of \$host";
 # --------------------------------
 $Lang{REPLY_FROM_SERVER} = <<EOF;
 \${h1(\$str)}
@@ -371,35 +379,35 @@ $Lang{BackupPC__Queue_Summary} = "BackupPC: キューサマリ";
 # --------------------------------
 $Lang{Backup_Queue_Summary} = <<EOF;
 \${h1("バックアップキューサマリ")}
-<br><br>
 \${h2("ユーザキューサマリ")}
 <p>
 現在キューイングされているユーザ要求は次のとおりです。
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> ホスト </td>
+    <td> Action </td>
     <td> 要求時間 </td>
     <td> ユーザ </td></tr>
 \$strUser
 </table>
-<br><br>
 
 \${h2("バックグラウンドキューサマリ")}
 <p>
 現在キューイングされているバックグラウンド要求は次のとおりです。</p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> ホスト </td>
+    <td> Action </td>
     <td> 要求時間 </td>
     <td> ユーザ </td></tr>
 \$strBg
 </table>
-<br><br>
 \${h2("コマンドキューサマリ")}
 <p>
 現在キューイングされているコマンド要求は次のとおりです。
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> ホスト </td>
+    <td> Action </td>
     <td> 要求時間 </td>
     <td> ユーザ </td>
     <td> コマンド </td></tr>
@@ -428,7 +436,7 @@ $Lang{BackupPC__Log_File_History} = "BackupPC: ログファイルの履歴";
 $Lang{Log_File_History__hdr} = <<EOF;
 \${h1("ログファイル履歴 \$hdr")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> ファイル </td>
     <td align="center"> サイズ </td>
     <td align="center"> 更新時間 </td></tr>
@@ -440,7 +448,7 @@ EOF
 $Lang{Recent_Email_Summary} = <<EOF;
 \${h1("最近のメールサマリ(日時降順)")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> 受信者 </td>
     <td align="center"> ホスト </td>
     <td align="center"> 日時 </td>
@@ -641,6 +649,34 @@ $Lang{BackupPC_Archive_Reply_from_server} = <<EOF;
 EOF
 
 
+# --------------------------------
+$Lang{BackupPC__Delete_Backup_Confirm__num_of__host} = "BackupPC: Delete Backup Confirm #\$num of \$host";
+# --------------------------------
+$Lang{A_filled} = "a filled";
+$Lang{An_unfilled} = "an unfilled";
+$Lang{Are_you_sure_delete} = <<EOF;
+\${h1("Are you sure?")}
+<p>
+You are about to delete \$filled \$type backup #\$num of \$host.
+
+<form name="Confirm" action="\$MyURL" method="get">
+
+<input type="hidden" name="host" value="\${EscHTML(\$host)}">
+<input type="hidden" name="num" value="\$num">
+
+<input type="hidden" name="doit" value="1">
+<input type="hidden" name="action" value="">
+
+Do you really want to do this?
+
+<input type="button" value="\${EscHTML(\$Lang->{CfgEdit_Button_Delete})}"
+ onClick="document.Confirm.action.value='deleteBackup';
+          document.Confirm.submit();">
+
+<input type="submit" value="No" name="ignore">
+</form>
+EOF
+
 # -------------------------
 $Lang{Host__host_Backup_Summary} = "BackupPC: ホスト \$host バックアップサマリ";
 
@@ -670,7 +706,7 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 <p>
 閲覧・バックアップファイルのリストアを行いたいバックアップ番号をクリックしてください。
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> バックアップ番号 </td>
     <td align="center"> 種別 </td>
     <td align="center"> フィルド </td>
@@ -678,6 +714,7 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
     <td align="center"> 開始日時 </td>
     <td align="center"> 間隔(分) </td>
     <td align="center"> 経過(日) </td>
+    \$deleteHdrStr
     <td align="center"> サーババックアップパス </td>
 </tr>
 \$str
@@ -686,10 +723,8 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 
 \$restoreStr
 </p>
-<br><br>
 \${h2("転送エラーサマリ")}
-<br><br>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> バックアップ番号 </td>
     <td align="center"> 種別 </td>
     <td align="center"> ビュー </td>
@@ -700,20 +735,19 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 </tr>
 \$errStr
 </table>
-<br><br>
 
 \${h2("ファイルサイズ/カウント 再利用サマリ")}
 <p>
 存在するファイルはプール内にすでにあります。次の新しいファイルはプールへ追加されます。
 空ファイルとSMBエラーは再利用にはカウントされません。
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="2" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> トータル </td>
     <td align="center" colspan="2"> 既存ファイル </td>
     <td align="center" colspan="2"> 新ファイル </td>
 </tr>
-<tr class="tableheader">
+<tr class="tableheader sortheader">
     <td align="center"> バックアップ番号 </td>
     <td align="center"> 種別 </td>
     <td align="center"> #ファイル </td>
@@ -726,18 +760,17 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 </tr>
 \$sizeStr
 </table>
-<br><br>
 
 \${h2("圧縮サマリ")}
 <p>
 すでにプールに入っているものと新しく圧縮されたファイルの圧縮パフォーマンス
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="3" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> 既存ファイル </td>
     <td align="center" colspan="3"> 新ファイル </td>
 </tr>
-<tr class="tableheader"><td align="center"> バックアップ番号 </td>
+<tr class="tableheader sortheader"><td align="center"> バックアップ番号 </td>
     <td align="center"> 種別 </td>
     <td align="center"> 圧縮レベル </td>
     <td align="center"> サイズ(MB) </td>
@@ -749,7 +782,6 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 </tr>
 \$compStr
 </table>
-<br><br>
 EOF
 
 $Lang{Host__host_Archive_Summary} = "BackupPC: ホスト \$host アーカイブサマリ";
@@ -886,7 +918,7 @@ $Lang{DirHistory_for__host} = <<EOF;
      そのディレクトリ内に移動できます。
 <li> ファイルのバージョンリンク(\$Lang->{DirHistory_fileLink}0,
      \$Lang->{DirHistory_fileLink}1, ...)をクリックすることで、そのファイルをダウンロードできます。
-<li> 異なるバックアップ間の同じ内容のファイルは同じバージョン番号になります。
+<li> 異なるバックアップ間の同じ内容のファイルは同じバージョン番号になります。(PleaseTranslateThis: except between v3 and v4 backups)
 <li> そのバックアップに存在しないファイルやディレクトリについては空欄になります。
 <li> 同じバージョンのファイルでも異なる属性を持っている場合があります。
      ファイルの属性はバックアップ番号を選択すると見ることができます。
@@ -989,6 +1021,8 @@ $Lang{Only_privileged_users_can_view_log_files} = "Only privileged users can vie
 $Lang{Only_privileged_users_can_view_email_summaries} = "Only privileged users can view email summaries.";
 $Lang{Only_privileged_users_can_browse_backup_files} = "Only privileged users can browse backup files"
                 . " ホスト \${EscHTML(\$In{host})}.";
+$Lang{Only_privileged_users_can_delete_backups} = "Only privileged users can delete backups"
+                . " of host \${EscHTML(\$host)}.";
 $Lang{Empty_host_name} = "ホスト名が空です。";
 $Lang{Directory___EscHTML} = "ディレクトリ \${EscHTML(\"\$TopDir/pc/\$host/\$num\")}"
 		    . " は空です。";
@@ -1039,6 +1073,8 @@ $Lang{Backup_requested_on__host_by__User} = "\$User による \$host のバッ�
 $Lang{Backup_stopped_dequeued_on__host_by__User} = "\$User による \$host のバックアップ中止/デキュー";
 $Lang{Restore_requested_to_host__hostDest__backup___num} = "ホスト\$hostDest のリストア要求 バックアップ #\$num,"
 	     . " by \$User from \$ENV{REMOTE_ADDR}";
+$Lang{Delete_requested_for_backup_of__host_by__User} = "Delete requested for backup #\$num of \$host"
+             . " by \$User from \$ENV{REMOTE_ADDR}";
 $Lang{Archive_requested} = "\$ENV{REMOTE_ADDR} から \$User によってアーカイブの要求がありました。";
 
 # -------------------------------------------------
@@ -1175,7 +1211,7 @@ $Lang{Restore_Summary} = <<EOF;
 \${h2("リストアサマリ")}
 <p>
 詳細を閲覧したいリストア番号をクリックしてください。
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> リストア番号 </td>
     <td align="center"> 結果 </td>
     <td align="right"> 開始日時</td>
@@ -1281,7 +1317,7 @@ next time you are in the office.
 
 Regards,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # No recent backup
@@ -1310,7 +1346,7 @@ attachments) cannot be restored if your PC disk crashes.
 
 Regards,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # Old Outlook files
@@ -1341,7 +1377,7 @@ complete.
 
 Regards,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 $Lang{howLong_not_been_backed_up} = "not been backed up successfully";
@@ -1360,6 +1396,7 @@ Speed MB/sec: \$fullRate;
 Incr Count: \$incrCnt;
 Incr Age/Days: \$incrAge;
 State: \$host_state;
+Disabled: \$host_disabled;
 Last Attempt: \$host_last_attempt;
 EOF
 

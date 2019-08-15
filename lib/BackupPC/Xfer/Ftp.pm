@@ -28,7 +28,7 @@
 #
 #========================================================================
 #
-# Version 3.2.0beta1, released 24 Jan 2010.
+# Version 4.2.2, released 3 Nov 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -86,7 +86,6 @@ BEGIN {
 # Constructor
 ##############################################################################
 
-
 #
 #   usage:
 #     $xfer = new BackupPC::Xfer::Ftp( $bpc, %args );
@@ -115,7 +114,6 @@ sub new
         } );
     return bless( $t, $class );
 }
-
 
 ##############################################################################
 # Methods
@@ -188,8 +186,8 @@ sub start
         $t->{ftp} = ($ARCLibOK) ? Net::FTP::AutoReconnect->new(%$args)
                                 : Net::FTP->new(%$args);
     };
-    if ($@) {
-        $t->{_errStr} = "Can't open connection to $args->{Host}: $!";
+    if ( $@ || !defined($t->{ftp}) ) {
+        $t->{_errStr} = "Can't open ftp connection to $args->{Host}: $!";
         $t->{xferErrCnt}++;
         return;
     }
@@ -202,7 +200,7 @@ sub start
     my $ret;
     eval { $ret = $t->{ftp}->login( $conf->{FtpUserName}, $conf->{FtpPasswd} ); };
     if ( !$ret ) {
-        $t->{_errStr} = "Can't login to $args->{Host} ($conf->{FtpUserName}, $conf->{FtpPasswd}): " . $t->{ftp}->message();
+        $t->{_errStr} = "Can't ftp login to $args->{Host} (user = $conf->{FtpUserName}), $@";
         $t->{xferErrCnt}++;
         return;
     }
@@ -211,7 +209,7 @@ sub start
     eval { $ret = $t->{ftp}->binary(); };
     if ( !$ret ) {
         $t->{_errStr} =
-          "Can't enable binary transfer mode to $args->{Host}: " . $t->{ftp}->message();
+          "Can't enable ftp binary transfer mode to $args->{Host}: " . $t->{ftp}->message();
         $t->{xferErrCnt}++;
         return;
     }
@@ -265,15 +263,24 @@ sub start
         $t->{compress}    = $t->{backups}[$t->{newBkupIdx}]{compress};
         $t->{newBkupNum}  = $t->{backups}[$t->{newBkupIdx}]{num};
         $t->{lastBkupNum} = $t->{backups}[$t->{lastBkupIdx}]{num};
-        $t->{AttrNew} = BackupPC::XS::AttribCache::new($t->{client}, $t->{newBkupNum}, $t->{shareName},
-                                                       $t->{compress});
-        $t->{Inode} = $t->{Inode0} = $t->{backups}[$t->{newBkupIdx}]{inodeLast};
-        if ( !$t->{inPlace} ) {
-            $t->{AttrOld} = BackupPC::XS::AttribCache::new($t->{client}, $t->{lastBkupNum}, $t->{shareName},
+        $t->{AttrNew}     = BackupPC::XS::AttribCache::new($t->{client}, $t->{newBkupNum}, $t->{shareName},
                                                            $t->{compress});
+        $t->{DeltaNew}    = BackupPC::XS::DeltaRefCnt::new("$TopDir/pc/$t->{client}/$t->{newBkupNum}");
+        $t->{AttrNew}->setDeltaInfo($t->{DeltaNew});
+
+        $t->{Inode} = 1;
+	for ( my $i = 0 ; $i < @{$t->{backups}} ; $i++ ) {
+	    $t->{Inode} = $t->{backups}[$i]{inodeLast} + 1 if ( $t->{Inode} <= $t->{backups}[$i]{inodeLast} );
+	}
+        $t->{Inode0} = $t->{Inode};
+
+        if ( !$t->{inPlace} ) {
+            $t->{AttrOld}  = BackupPC::XS::AttribCache::new($t->{client}, $t->{lastBkupNum}, $t->{shareName},
+                                                           $t->{compress});
+            $t->{DeltaOld} = BackupPC::XS::DeltaRefCnt::new("$TopDir/pc/$t->{client}/$t->{lastBkupNum}");
+            $t->{AttrOld}->setDeltaInfo($t->{DeltaOld});
         }
         $t->logWrite("ftp inPlace = $t->{inPlace}, newBkupNum = $t->{newBkupNum}, lastBkupNum = $t->{lastBkupNum}\n", 4);
-        BackupPC::XS::PoolRefCnt::DeltaFileInit("$TopDir/pc/$t->{client}");
         $bpc->flushXSLibMesgs();
 
         $t->backup();
@@ -285,10 +292,17 @@ sub start
             $bpc->flushXSLibMesgs();
         }
 
+        if ( $t->{logLevel} >= 6 ) {
+            print("RefCnt Deltas for new #$t->{newBkupNum}\n");
+            $t->{DeltaNew}->print();
+            if ( $t->{DeltaOld} ) {
+                print("RefCnt Deltas for old #$t->{lastBkupNum}\n");
+                $t->{DeltaOld}->print();
+            }
+        }
         $bpc->flushXSLibMesgs();
-        BackupPC::XS::PoolRefCnt::DeltaPrint() if ( $t->{logLevel} >= 6 );
-        BackupPC::XS::PoolRefCnt::DeltaFileFlush();
-        $bpc->flushXSLibMesgs();
+        $t->{DeltaNew}->flush();
+        $t->{DeltaOld}->flush() if ( $t->{DeltaOld} );
 
         if ( $t->{type} eq 'incr' ) {
             $logMsg = "Incremental backup of $t->{host} "
@@ -566,17 +580,15 @@ sub getFTPArgs
     my $conf = $t->{conf};
 
     return {
-        Host         => $conf->{ClientNameAlias}
-                     || $t->{hostIP}
-                     || $t->{host},
-#        Firewall     => undef,                            # not used
-#        FirewallType => undef,                            # not used
-#        BlockSize    => $conf->{FtpBlockSize} || 10240,
-#        Port         => $conf->{FtpPort}      || 21,
-#        Timeout      => defined($conf->{FtpTimeout}) ? $conf->{FtpTimeout} : 120,
+        Host         => $t->{hostIP} || $t->{host},
+        Firewall     => undef,                            # not used
+        FirewallType => undef,                            # not used
+        BlockSize    => $conf->{FtpBlockSize} || 10240,
+        Port         => $conf->{FtpPort}      || 21,
+        Timeout      => defined($conf->{FtpTimeout}) ? $conf->{FtpTimeout} : 120,
         Debug        => $t->{logLevel} >= 5 ? 1 : 0,
         Passive      => (defined($conf->{FtpPassive}) ? $conf->{FtpPassive} : 1),
-#        Hash         => undef,                            # do not touch
+        Hash         => undef,                            # do not touch
     };
 }
 
@@ -801,7 +813,13 @@ sub handleDir
         #
         $t->pathCreate($pathNew, 1);
         my $name = $f->{name};
-        while ( length($name) ) {
+        $name = "/$name" if ( $name !~ m{^/} );
+        while ( length($name) > 1 ) {
+	    if ( $name =~ m{/} ) {
+		$name =~ s{(.*)/.*}{$1};
+	    } else {
+		$name = "/";
+	    }
             my $a = $AttrNew->get($name);
             last if ( defined($a) && $a->{type} == BPC_FTYPE_DIR );
             $t->logWrite("handleDir: adding BPC_FTYPE_DIR attrib entry for $name\n", 3);
@@ -819,15 +837,13 @@ sub handleDir
                        };
             $AttrNew->set($name, $fNew);
             $t->moveFileToOld($a, $fNew);
-            if ( $name =~ m{/} ) {
-                $name =~ s{(.*)/.*}{$1};
-            } elsif ( $name ne "/" ) {
-                $name = "/";
-            } else {
-                $name = "";
-            }
         }
     }
+
+    #
+    # Update attribs
+    #
+    $t->attribUpdate($a, $f, $same);
 
     $t->logWrite("handleDir: name = $f->{name}, pathNew = $pathNew\n", 4);
 
@@ -886,6 +902,7 @@ sub handleDir
     # If we didn't see a file, move to old.
     #
     foreach my $name ( keys(%$all) ) {
+        next if ( $name eq "." || $name eq ".." );
         my $path = "$f->{name}/$name";
         $path =~ s{^/+}{};
         $t->logWrite("dirCleanup: checking $path, expected = $expectedFiles{$path}\n", 5);
@@ -933,6 +950,7 @@ sub handleFile
                 && $f->{size}  == $a->{size}
                 && $f->{uid}   == $a->{uid}
                 && $f->{gid}   == $a->{gid} ) {
+            $t->logWrite("handleFile: $f->{name} has same attribs\n", 5);
             return 1;
         }
     }
@@ -977,7 +995,7 @@ sub handleFile
     if ( !*FTP || $@ || $errs ) {
         $t->logFileAction( "fail", $f->{name}, $f );
         $t->{xferBadFileCnt}++;
-        $stats->{errCnt} += scalar @$errs;
+        $stats->{errCnt} += ref($errs) eq 'ARRAY' ? scalar(@$errs) : 1;
         return;
     }
 
@@ -1045,7 +1063,7 @@ sub logFileAction
         $owner, $attrib->{size}, $attrib->{name}
     );
 
-    if ( ($t->{stats}{TotalFileCnt} % 20) == 0 ) {
+    if ( ($t->{stats}{TotalFileCnt} % 20) == 0 && !$t->{noProgressPrint} ) {
         printf("__bpc_progress_fileCnt__ %d\n", $t->{stats}{TotalFileCnt});
     }
 
@@ -1060,6 +1078,8 @@ sub moveFileToOld
     my($t, $a, $f) = @_;
     my $AttrNew = $t->{AttrNew};
     my $AttrOld = $t->{AttrOld};
+    my $DeltaNew = $t->{DeltaNew};
+    my $DeltaOld = $t->{DeltaOld};
     my $bpc = $t->{bpc};
 
     if ( !$a || keys(%$a) == 0 ) {
@@ -1067,63 +1087,73 @@ sub moveFileToOld
         # A new file will be created, so add delete attribute to old
         #
         if ( $AttrOld ) {
-            $t->logWrite("moveFileToOld $a->{name} (add delete attribute to old)\n", 5);
             $AttrOld->set($f->{name}, { type => BPC_FTYPE_DELETED });
+            $t->logWrite("moveFileToOld: added $f->{name} as BPC_FTYPE_DELETED in old\n", 5);
         }
         return;
     }
-    $t->logWrite("moveFileToOld $a->{name}, links = $a->{nlinks}\n", 5);
-    if ( !$AttrOld || $AttrOld->get($f->{name}) ) {
+    $t->logWrite("moveFileToOld: $a->{name}, $f->{name}, links = $a->{nlinks}, type = $a->{type}\n", 5);
+    if ( $a->{type} != BPC_FTYPE_DIR ) {
         if ( $a->{nlinks} > 0 ) {
+            if ( $AttrOld ) {
+                if ( !$AttrOld->getInode($a->{inode}) ) {
+                    #
+                    # copy inode to old if it isn't already there
+                    #
+                    $AttrOld->setInode($a->{inode}, $a);
+                    $DeltaOld->update($a->{compress}, $a->{digest}, 1);
+                }
+                #
+                # copy to old - no need for refeence count update since
+                # inode is already there
+                #
+                $AttrOld->set($f->{name}, $a, 1) if ( !$AttrOld->get($f->{name}) );
+            }
             $a->{nlinks}--;
             if ( $a->{nlinks} <= 0 ) {
                 $AttrNew->deleteInode($a->{inode});
-                BackupPC::XS::PoolRefCnt::DeltaUpdate($a->{compress}, $a->{digest}, -1);
+                $DeltaNew->update($a->{compress}, $a->{digest}, -1);
             } else {
                 $AttrNew->setInode($a->{inode}, $a);
             }
         } else {
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($a->{compress}, $a->{digest}, -1)
-                                            if ( length($a->{digest}) );
+            $DeltaNew->update($a->{compress}, $a->{digest}, -1);
+            if ( $AttrOld && !$AttrOld->get($f->{name}) && $AttrOld->set($f->{name}, $a, 1) ) {
+                $DeltaOld->update($a->{compress}, $a->{digest}, 1);
+            }
         }
         $AttrNew->delete($f->{name});
-        if ( $a->{type} == BPC_FTYPE_DIR ) {
+    } else {
+        if ( !$AttrOld || $AttrOld->get($f->{name}) ) {
             #
             # Delete the directory tree, including updating reference counts
             #
             my $pathNew = $AttrNew->getFullMangledPath($f->{name});
-            BackupPC::DirOps::RmTreeQuiet($bpc, $pathNew, $a->{compress});
+            $t->logWrite("moveFileToOld(..., $f->{name}): deleting $pathNew\n", 3);
+            BackupPC::DirOps::RmTreeQuiet($bpc, $pathNew, $a->{compress}, $DeltaNew, $AttrNew);
+        } else {
+            #
+            # For a directory we need to move it to old, and copy
+            # any inodes that are referenced below this directory.
+	    # Also update the reference counts for the moved files.
+            #
+            my $pathNew = $AttrNew->getFullMangledPath($f->{name});
+            my $pathOld = $AttrOld->getFullMangledPath($f->{name});
+            $t->logWrite("moveFileToOld(..., $f->{name}): renaming $pathNew to $pathOld\n", 5);
+            $t->pathCreate($pathOld);
+            $AttrNew->flush(0, $f->{name});
+            if ( !rename($pathNew, $pathOld) ) {
+                $t->logWrite(sprintf("moveFileToOld(..., %s: can't rename %s to %s ($!, %d, %d, %d)\n",
+                                      $f->{name}, $pathNew, $pathOld, -e $pathNew, -e $pathOld, -d $pathOld));
+                $t->{xferErrCnt}++;
+            } else {
+                BackupPC::XS::DirOps::refCountAll($pathOld, $a->{compress}, -1, $DeltaNew);
+                BackupPC::XS::DirOps::refCountAll($pathOld, $a->{compress},  1, $DeltaOld);
+                $t->copyInodes($f->{name});
+                $AttrOld->set($f->{name}, $a, 1);
+            }
         }
-        return;
-    }
-
-    if ( $a->{nlinks} > 0 ) {
-        #
-        # only write the inode if it doesn't exist in old;
-        # in that case, increase the pool reference count
-        #
-        if ( $AttrOld->set($f->{name}, $a, 1) ) {
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($a->{compress}, $a->{digest}, 1);
-        }
-    } else {
-        $AttrOld->set($f->{name}, $a);
-    }
-    $AttrNew->delete($f->{name});
-    if ( $a->{type} == BPC_FTYPE_DIR && $AttrOld ) {
-        #
-        # For a directory we need to move it to old, and copy
-        # any inodes that are referenced below this directory.
-        #
-        my $pathNew = $AttrNew->getFullMangledPath($f->{name});
-        my $pathOld = $AttrOld->getFullMangledPath($f->{name});
-        $t->logWrite("moveFileToOld(..., $f->{name}): renaming $pathNew to $pathOld\n", 5);
-        $AttrNew->flush(0, $f->{name});
-        $t->copyInodes($f->{name});
-        $t->pathCreate($pathOld);
-        if ( !rename($pathNew, $pathOld) ) {
-            $t->logWrite("moveFileToOld(..., $f->{name}): can't rename $pathNew to $pathOld\n", 1);
-            $t->{xferErrCnt}++;
-        }
+        $AttrNew->delete($f->{name});
     }
 }
 
@@ -1132,6 +1162,8 @@ sub copyInodes
     my($t, $dirName) = @_;
     my $AttrNew = $t->{AttrNew};
     my $AttrOld = $t->{AttrOld};
+    my $DeltaNew = $t->{DeltaNew};
+    my $DeltaOld = $t->{DeltaOld};
     my $bpc = $t->{bpc};
 
     return if ( !defined($AttrOld) );
@@ -1141,7 +1173,6 @@ sub copyInodes
     $t->logWrite("copyInodes: dirName = $dirName, dirPath = $dirPath\n", 4);
 
     my $attrAll = $AttrNew->getAll($dirName);
-    $t->logWrite("copyInodes: finished getAll()\n", 4);
     $bpc->flushXSLibMesgs();
 
     #
@@ -1165,6 +1196,7 @@ sub copyInodes
     }
 
     foreach my $fileUM ( keys(%$attrAll) ) {
+        next if ( $fileUM eq "." || $fileUM eq ".." );
         my $a = $attrAll->{$fileUM};
         if ( $a->{type} == BPC_FTYPE_DIR ) {
             #
@@ -1182,7 +1214,7 @@ sub copyInodes
         if ( !defined($AttrOld->getInode($a->{inode})) ) {
             $t->logWrite("copyInodes($dirName): $fileUM moving inode $a->{inode} to old\n", 5);
             $AttrOld->setInode($a->{inode}, $aInode);
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($aInode->{compress}, $aInode->{digest}, 1);
+            $DeltaOld->update($aInode->{compress}, $aInode->{digest}, 1);
         }
 
         #
@@ -1192,7 +1224,7 @@ sub copyInodes
         if ( $aInode->{nlinks} == 0 ) {
             $AttrNew->deleteInode($a->{inode});
             $t->logWrite("copyInodes($dirName): $fileUM deleting inode $a->{inode} in new\n", 5);
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($aInode->{compress}, $aInode->{digest}, -1);
+            $DeltaNew->update($aInode->{compress}, $aInode->{digest}, -1);
         } else {
             $AttrNew->setInode($a->{inode}, $aInode);
         }
@@ -1211,6 +1243,8 @@ sub attribUpdate
     #
     my $AttrNew     = $t->{AttrNew};
     my $AttrOld     = $t->{AttrOld};
+    my $DeltaNew    = $t->{DeltaNew};
+    my $DeltaOld    = $t->{DeltaOld};
     my $bpc         = $t->{bpc};
     my $attribSet   = 1;
     my $newCompress = $t->{compress};
@@ -1238,7 +1272,7 @@ sub attribUpdate
             #
             if ( $AttrOld && !$AttrOld->get($f->{name}) ) {
                 if ( $AttrOld->set($f->{name}, $a, 1) ) {
-                    BackupPC::XS::PoolRefCnt::DeltaUpdate($newCompress, $f->{digest}, 1);
+                    $DeltaOld->update($newCompress, $f->{digest}, 1);
                 }
             }
             $f->{inode}  = $a->{inode};
@@ -1248,7 +1282,7 @@ sub attribUpdate
         #
         # file is new or changed; update ref counts
         #
-        BackupPC::XS::PoolRefCnt::DeltaUpdate($newCompress, $f->{digest}, 1)
+        $DeltaNew->update($newCompress, $f->{digest}, 1)
                                                 if ( $f->{digest} ne "" );
     }
 

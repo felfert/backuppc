@@ -11,7 +11,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2001-2013  Craig Barratt
+#   Copyright (C) 2001-2017  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 1 Dec 2013.
+# Version 4.1.4, released 24 Nov 2017.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -39,6 +39,8 @@ package BackupPC::Xfer::Smb;
 use strict;
 use Encode qw/from_to encode/;
 use base qw(BackupPC::Xfer::Protocol);
+use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
+use Errno qw(EWOULDBLOCK);
 
 sub useTar
 {
@@ -170,12 +172,19 @@ sub start
         $t->{_errStr} = "Can't exec $conf->{SmbClientPath}";
         return;
     }
-    my $str = "Running: " . $bpc->execCmd2ShellCmd(@$smbClientCmd) . "\n";
+    my $str = $bpc->execCmd2ShellCmd(@$smbClientCmd);
     from_to($str, $conf->{ClientCharset}, "utf8")
                             if ( $conf->{ClientCharset} ne "" );
-    $t->{XferLOG}->write(\$str);
+    $t->{XferLOG}->write(\"Running: $str\n");
     alarm($conf->{ClientTimeout});
     $t->{_errStr} = undef;
+    #
+    # make pipeSMB non-blocking; BackupPC_dump uses select() to see if there
+    # is something to read.
+    #
+    if ( !fcntl($t->{pipeSMB}, F_SETFL, fcntl($t->{pipeSMB}, F_GETFL, 0) | O_NONBLOCK) ) {
+        $t->{_errStr} = "can't set pipeSMB to non-blocking";
+    }
     return $logMsg;
 }
 
@@ -186,9 +195,18 @@ sub readOutput
 
     if ( vec($rout, fileno($t->{pipeSMB}), 1) ) {
         my $mesg;
+
+        $! = 0;
         if ( sysread($t->{pipeSMB}, $mesg, 8192) <= 0 ) {
-            vec($$FDreadRef, fileno($t->{pipeSMB}), 1) = 0;
-            close($t->{pipeSMB});
+            if ( $! == EWOULDBLOCK ) {
+                $t->{XferLOG}->write(\"readOutput: no bytes read (EWOULDBLOCK); continuing\n");
+            } elsif ( eof($t->{pipeSMB}) ) {
+                vec($$FDreadRef, fileno($t->{pipeSMB}), 1) = 0;
+		my $ok = close($t->{pipeSMB});
+                $t->{XferLOG}->write(\"readOutput: sysread returns 0 and got EOF (exit ok = $ok, $!)\n");
+                $t->{xferOK} = $ok ? 1 : 0;
+                $t->{smbOut} .= "Non-zero exit status from smbclient\n" if ( !$ok );
+            }
         } else {
             $t->{smbOut} .= $mesg;
         }
@@ -241,7 +259,8 @@ sub readOutput
             $t->{xferOK} = 1;
             $t->{byteCnt} = $1;
             $t->{XferLOG}->write(\"$_\n") if ( $t->{logLevel} >= 0 );
-        } elsif ( /^\s*tar: restored \d+ files/ ) {
+        } elsif ( /^\s*tar: restored \d+ files/
+                    || /^\s*tar:\d+\s*tar_process done, err = 0/ ) {
             $t->{xferOK} = 1;
             $t->{XferLOG}->write(\"$_\n") if ( $t->{logLevel} >= 0 );
         } elsif ( /^\s*read_socket_with_timeout: timeout read. /i ) {
@@ -277,6 +296,9 @@ sub readOutput
             $t->{XferLOG}->write(\"$_\n") if ( $t->{logLevel} >= 0 );
         } elsif ( /^\s*directory \\/i ) {
             $t->{XferLOG}->write(\"$_\n") if ( $t->{logLevel} >= 2 );
+        } elsif ( /^tar:\d+ Error opening remote file/i ) {
+            $t->{xferErrCnt}++;
+            $t->{XferLOG}->write(\"XferErr $_\n") if ( $t->{logLevel} >= 1 );
         } elsif ( /smb: \\>/
                 || /^\s*tar:\d+/ # MAKSYM 14082016: ignoring 2 more Samba-4.3 specific lines
                 || /^\s*WARNING:/i
@@ -291,6 +313,9 @@ sub readOutput
                 || /^\s*Timezone is/i
                 || /^\s*tar_re_search set/i
                 || /^\s*creating lame (up|low)case table/i
+                || /^\s*rlimit_max: increasing rlimit_max/i
+                || /^\s*OS=\[/i
+                || /^\s*$/
 	    ) {
             # ignore these messages
             $t->{XferLOG}->write(\"$_\n") if ( $t->{logLevel} >= 1 );
@@ -326,7 +351,7 @@ sub readOutput
 			file  => $badFile
 		    });
             }
-            $t->{XferLOG}->write(\"$_\n") if ( $t->{logLevel} >= 1 );
+            $t->{XferLOG}->write(\"XferErr $_\n") if ( $t->{logLevel} >= 1 );
         }
     }
     return 1;

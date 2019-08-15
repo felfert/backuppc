@@ -90,9 +90,12 @@ $Lang{BackupPC_Server_Status_General_Info}= <<EOF;
         <li>\$numUserQueue nevyøízených žádostí o zálohu od uživatelù,
         <li>\$numCmdQueue pending command requests,
         \$poolInfo
-        <li>Pool file system was recently at \$Info{DUlastValue}%
-            (\$DUlastTime), today\'s max is \$Info{DUDailyMax}% (\$DUmaxTime)
-            and yesterday\'s max was \$Info{DUDailyMaxPrev}%.
+        <li>Stav úložištì je \$Info{DUlastValue}%
+            (\$DUlastTime), dnešní maximum je \$Info{DUDailyMax}% (\$DUmaxTime)
+                a vèerejší maximum bylo \$Info{DUDailyMaxPrev}%.
+        <li>Inode stav úložištì je \$Info{DUInodelastValue}%
+            (\$DUlastTime), dnešní maximum je \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)
+                a vèerejší maximum bylo \$Info{DUInodeDailyMaxPrev}%.
     </ul>
 </ul>
 EOF
@@ -103,7 +106,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 <p>
 \${h2("Probíhající úlohy")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td> Host </td>
     <td> Typ </td>
     <td> Uživatel </td>
@@ -122,7 +125,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 
 \${h2("Selhání, která vyžadují pozornost")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> Host </td>
     <td align="center"> Typ </td>
     <td align="center"> Uživatel </td>
@@ -145,7 +148,10 @@ $Lang{BackupPC_Summary} = <<EOF;
 <li>Tento stav byl vygenerován v \$now.
 <li>Stav úložištì je \$Info{DUlastValue}%
     (\$DUlastTime), dnešní maximum je \$Info{DUDailyMax}% (\$DUmaxTime)
-        a vèerejší maximum bylo \$Info{DUDailyMaxPrev}%.
+    a vèerejší maximum bylo \$Info{DUDailyMaxPrev}%.
+<li>Inode stav úložištì je \$Info{DUInodelastValue}%
+    (\$DUlastTime), dnešní maximum je \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)
+    a vèerejší maximum bylo \$Info{DUInodeDailyMaxPrev}%.
 </ul>
 </p>
 
@@ -162,6 +168,7 @@ $Lang{BackupPC_Summary} = <<EOF;
 <table class="sortable" id="host_summary_backups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Host </td>
     <td align="center"> Uživatel </td>
+    <td align="center"> Poznámka </td>
     <td align="center"> #Plný </td>
     <td align="center"> Plný Èas (dní) </td>
     <td align="center"> Plný Velikost (GiB) </td>
@@ -174,7 +181,6 @@ $Lang{BackupPC_Summary} = <<EOF;
     <td align="center"> Poslední pokus </td></tr>
 \$strGood
 </table>
-<br><br>
 \${h2("Hosté s žádnými provedenými zálohami")}
 <p>
 \$hostCntNone hostù s žádnými zálohani.
@@ -182,6 +188,7 @@ $Lang{BackupPC_Summary} = <<EOF;
 <table class="sortable" id="host_summary_nobackups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Host </td>
     <td align="center"> Uživatel </td>
+    <td align="center"> Poznámka </td>
     <td align="center"> #Plný </td>
     <td align="center"> Plný Èas (dní) </td>
     <td align="center"> Plný Velikost (GiB) </td>
@@ -309,6 +316,7 @@ EOF
 
 # --------------------------------
 $Lang{BackupPC__Backup_Requested_on__host} = "BackupPC:  Záloha vyžádána na \$host";
+$Lang{BackupPC__Delete_Requested_for_a_backup_of__host} = "BackupPC: Delete Requested for a backup of \$host";
 # --------------------------------
 $Lang{REPLY_FROM_SERVER} = <<EOF;
 \${h1(\$str)}
@@ -371,36 +379,36 @@ $Lang{BackupPC__Queue_Summary} = "BackupPC: Pøehled front";
 # --------------------------------
 $Lang{Backup_Queue_Summary} = <<EOF;
 \${h1("Pøehled fronty zálohování")}
-<br><br>
 \${h2("Pøehled fronty uživatelù")}
 <p>
 Následující uživatelé jsou momentálnì ve frontì:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Host </td>
+    <td> Action </td>
     <td> Èas do </td>
     <td> Uživatel </td></tr>
 \$strUser
 </table>
-<br><br>
 
 \${h2("Souhrn fronty v pozadí")}
 <p>
 Následující žádosti v pozadí jsou momentálnì ve frontì:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Host </td>
+    <td> Action </td>
     <td> Èas do </td>
     <td> Uživatel </td></tr>
 \$strBg
 </table>
-<br><br>
 \${h2("Souhrn fronty pøíkazù")}
 <p>
 Následující pøíkazy jsou momentálnì ve frontì:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Host </td>
+    <td> Action </td>
     <td> Èas do </td>
     <td> Uživatel </td>
     <td> Pøíkaz </td></tr>
@@ -429,7 +437,7 @@ $Lang{BackupPC__Log_File_History} = "BackupPC: Historie Log Souboru";
 $Lang{Log_File_History__hdr} = <<EOF;
 \${h1("Historie Log Souboru \$hdr")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Soubor </td>
     <td align="center"> Velikost </td>
     <td align="center"> Èas modifikace </td></tr>
@@ -441,7 +449,7 @@ EOF
 $Lang{Recent_Email_Summary} = <<EOF;
 \${h1("Pøehled nedávných emailù (Øazeno zpìtnì)")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Pøíjemce </td>
     <td align="center"> Odesílatel </td>
     <td align="center"> Èas </td>
@@ -646,6 +654,34 @@ Odpovìï od serveru: \$reply
 EOF
 
 
+# --------------------------------
+$Lang{BackupPC__Delete_Backup_Confirm__num_of__host} = "BackupPC: Delete Backup Confirm #\$num of \$host";
+# --------------------------------
+$Lang{A_filled} = "a filled";
+$Lang{An_unfilled} = "an unfilled";
+$Lang{Are_you_sure_delete} = <<EOF;
+\${h1("Are you sure?")}
+<p>
+You are about to delete \$filled \$type backup #\$num of \$host.
+
+<form name="Confirm" action="\$MyURL" method="get">
+
+<input type="hidden" name="host" value="\${EscHTML(\$host)}">
+<input type="hidden" name="num" value="\$num">
+
+<input type="hidden" name="doit" value="1">
+<input type="hidden" name="action" value="">
+
+Do you really want to do this?
+
+<input type="button" value="\${EscHTML(\$Lang->{CfgEdit_Button_Delete})}"
+ onClick="document.Confirm.action.value='deleteBackup';
+          document.Confirm.submit();">
+
+<input type="submit" value="No" name="ignore">
+</form>
+EOF
+
 # -------------------------
 $Lang{Host__host_Backup_Summary} = "BackupPC: Pøehled záloh hosta \$host";
 
@@ -675,7 +711,7 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 <p>
 Kliknìte na èíslo zálohy pro prohlížení a obnovení zálohy.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> Backup# </td>
     <td align="center"> Typ </td>
     <td align="center"> Vyplnìno </td>
@@ -683,6 +719,7 @@ Kliknìte na èíslo zálohy pro prohlížení a obnovení zálohy.
     <td align="center"> Datum spuštìní </td>
     <td align="center"> Doba trvání/minuty </td>
     <td align="center"> Doba/dny </td>
+    \$deleteHdrStr
     <td align="center"> Cesta serveru zálohy </td>
 </tr>
 \$str
@@ -691,10 +728,8 @@ Kliknìte na èíslo zálohy pro prohlížení a obnovení zálohy.
 
 \$restoreStr
 </p>
-<br><br>
 \${h2("Pøehled Xfer chyb")}
-<br><br>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Backup# </td>
     <td align="center"> Typ </td>
     <td align="center"> Pohled </td>
@@ -705,7 +740,6 @@ Kliknìte na èíslo zálohy pro prohlížení a obnovení zálohy.
 </tr>
 \$errStr
 </table>
-<br><br>
 
 \${h2("File Size/Count Reuse Summary")}
 <p>
@@ -713,13 +747,13 @@ Existující soubory jsou ty, které jsou již v úložišti; nové jsou pøidané
 do úložištì.
 Prázné soubory a SMB chyby nejsou poèítány.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="2" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> Celkovì </td>
     <td align="center" colspan="2"> Existující soubory </td>
     <td align="center" colspan="2"> Nové soubory </td>
 </tr>
-<tr class="tableheader">
+<tr class="tableheader sortheader">
     <td align="center"> Záloha # </td>
     <td align="center"> Typ </td>
     <td align="center"> #Soubory </td>
@@ -732,19 +766,18 @@ Prázné soubory a SMB chyby nejsou poèítány.
 </tr>
 \$sizeStr
 </table>
-<br><br>
 
 \${h2("Pøehled kompresí")}
 <p>
 Výkon komprese pro soubory, které jsou již v úložišti a pro novì
 zkomprimované soubory.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="3" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> Existující soubory </td>
     <td align="center" colspan="3"> Nové soubory </td>
 </tr>
-<tr class="tableheader"><td align="center"> Záloha # </td>
+<tr class="tableheader sortheader"><td align="center"> Záloha # </td>
     <td align="center"> Typ </td>
     <td align="center"> Úroveò komprese </td>
     <td align="center"> Velikost/MB </td>
@@ -756,7 +789,6 @@ zkomprimované soubory.
 </tr>
 \$compStr
 </table>
-<br><br>
 EOF
 
 $Lang{Host__host_Archive_Summary} = "BackupPC: Pøehled archivù hosta \$host ";
@@ -896,7 +928,7 @@ ze všech záloh:
 <li> Klikni na odkaz verze souboru (\$Lang->{DirHistory_fileLink}0,
      \$Lang->{DirHistory_fileLink}1, ...) k jeho stažení,
 <li> Soubory se stejným obsahem v rùzných zálohách mají stejné
-     èíslo verze,
+     èíslo verze (PleaseTranslateThis: except between v3 and v4 backups),
 <li> Soubory nebo adresáøe, které nejsou ve vybrané záloze 
      nejsou oznaèeny.
 <li> Soubory zobrazené se stejným èíslem verze mohou mít rozdílné atributy.
@@ -1000,6 +1032,8 @@ $Lang{Only_privileged_users_can_view_log_files} = "Pouze oprávnìní uživatelé maj
 $Lang{Only_privileged_users_can_view_email_summaries} = "Pouze oprávnìní uživatelé mají pøístup k souhrnu emailù.";
 $Lang{Only_privileged_users_can_browse_backup_files} = "Pouze oprávnìní uživatelé mohou prohlížet soubory záloh"
                 . " pro host \${EscHTML(\$In{host})}.";
+$Lang{Only_privileged_users_can_delete_backups} = "Only privileged users can delete backups"
+                . " of host \${EscHTML(\$host)}.";
 $Lang{Empty_host_name} = "Prázdné jméno hosta.";
 $Lang{Directory___EscHTML} = "Adresáø \${EscHTML(\"\$TopDir/pc/\$host/\$num\")}"
 		    . " je prázdný";
@@ -1050,6 +1084,8 @@ $Lang{Backup_requested_on__host_by__User} = "Záloha vyžádána z \$host uživatelem
 $Lang{Backup_stopped_dequeued_on__host_by__User} = "Záloha ukonèena/vyøazena z fronty z \$host uživatelem \$User";
 $Lang{Restore_requested_to_host__hostDest__backup___num} = "Obnova vyžádána na hosta \$hostDest, obnova #\$num,"
 	     . " uživatelem \$User z \$ENV{REMOTE_ADDR}";
+$Lang{Delete_requested_for_backup_of__host_by__User} = "Delete requested for backup #\$num of \$host"
+             . " by \$User from \$ENV{REMOTE_ADDR}";
 $Lang{Archive_requested} = "Archivace vyžádána uživatelem \$User z \$ENV{REMOTE_ADDR}";
 
 # -------------------------------------------------
@@ -1187,7 +1223,7 @@ $Lang{Restore_Summary} = <<EOF;
 \${h2("Obnovit souhrn")}
 <p>
 Klikni na obnovení pro více detailù.
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Obnovení # </td>
     <td align="center"> Výsledek </td>
     <td align="right"> Datum spuštení</td>
@@ -1291,7 +1327,7 @@ Ujistìte se, že je Vaše PC pøipojeno do sítì, až budete pøíštì v kanceláøi.
 
 S pozdravem,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # No recent backup
@@ -1319,7 +1355,7 @@ nebudou moci býti obnoveny, pokud se disk ve Vašem poèítaèi poškodí.
 
 S pozdravem,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # Old Outlook files
@@ -1349,7 +1385,7 @@ ke zjištìní stavu zálohování. Dokonèení mùže trvat nìkolik minut.
 
 S pozdravem,
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 $Lang{howLong_not_been_backed_up} = "nebylo zálohováno úspìšnì";
@@ -1368,6 +1404,7 @@ Rychlost MB/sec: \$fullRate;
 Poèet inkr: \$incrCnt;
 Èas inkr/Dní: \$incrAge;
 Stav: \$host_state;
+Zakázáno: \$host_disabled;
 Poslední pokus: \$host_last_attempt;
 EOF
 

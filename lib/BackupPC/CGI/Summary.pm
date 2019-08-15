@@ -10,7 +10,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2003-2013  Craig Barratt
+#   Copyright (C) 2003-2018  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 1 Dec 2013.
+# Version 4.2.2, released 3 Nov 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -70,7 +70,7 @@ sub action
                     $fullDur  = $Backups[$i]{endTime} - $Backups[$i]{startTime};
                 }
                 $fullSizeTot += $Backups[$i]{size} / (1024 * 1024);
-            } else {
+            } elsif ( $Backups[$i]{type} eq "incr" ) {
                 $incrCnt++;
                 if ( $incrAge < 0 || $Backups[$i]{startTime} > $incrAge ) {
                     $incrAge = $Backups[$i]{startTime};
@@ -139,6 +139,7 @@ sub action
 <tr$reasonHilite><td class="border">${HostLink($host)}</td>
     <td align="center" class="border"> ${UserLink(defined($Hosts->{$host})
 				    ? $Hosts->{$host}{user} : "")} </td>
+    <td align="center" class="border">${EscHTML($Conf{ClientComment})}</td>
     <td align="center" class="border">$fullCnt</td>
     <td align="center" class="border">$fullAge</td>
     <td align="center" class="border">$fullSize</td>
@@ -161,8 +162,9 @@ EOF
     $fullSizeTot = sprintf("%.2f", $fullSizeTot / 1024);
     $incrSizeTot = sprintf("%.2f", $incrSizeTot / 1024);
     my $now      = timeStamp2(time);
-    my $DUlastTime   = timeStamp2($Info{DUlastValueTime});
-    my $DUmaxTime    = timeStamp2($Info{DUDailyMaxTime});
+    my $DUlastTime     = timeStamp2($Info{DUlastValueTime});
+    my $DUmaxTime      = timeStamp2($Info{DUDailyMaxTime});
+    my $DUInodemaxTime = timeStamp2($Info{DUInodeDailyMaxTime});
 
     my $content = eval ("qq{$Lang->{BackupPC_Summary}}");
     Header($Lang->{BackupPC__Server_Summary}, $content);

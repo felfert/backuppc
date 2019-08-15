@@ -104,6 +104,10 @@ $Lang{BackupPC_Server_Status_General_Info}= <<EOF;
             \$Info{DUlastValue}% (\$DUlastTime).  Il massimo di oggi
             &egrave; del \$Info{DUDailyMax}% (\$DUmaxTime), mentre quello
             di ieri era del \$Info{DUDailyMaxPrev}%.
+        <li>Inode recentemente il sistema dei file di pool &egrave; stato al
+            \$Info{DUInodelastValue}% (\$DUlastTime).  Il massimo di oggi
+            &egrave; del \$Info{DUInodeDailyMax}% (\$DUInodemaxTime), mentre quello
+            di ieri era del \$Info{DUInodeDailyMaxPrev}%.
     </ul>
 </ul>
 EOF
@@ -114,7 +118,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 <p>
 \${h2("Processi attualmente in esecuzione")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td> Host </td>
     <td> Tipo </td>
     <td> Utente </td>
@@ -133,7 +137,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 
 \${h2("Fallimenti che richiedono attenzione")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> Host </td>
     <td align="center"> Tipo </td>
     <td align="center"> Utente </td>
@@ -158,6 +162,10 @@ $Lang{BackupPC_Summary} = <<EOF;
     \$Info{DUlastValue}% (\$DUlastTime).  Il massimo di oggi
      &egrave; del \$Info{DUDailyMax}% (\$DUmaxTime), mentre quello
      di ieri era del \$Info{DUDailyMaxPrev}%.
+<li>Inode recentemente il sistema dei file di pool &egrave; stato al
+    \$Info{DUInodelastValue}% (\$DUlastTime).  Il massimo di oggi
+    &egrave; del \$Info{DUInodeDailyMax}% (\$DUInodemaxTime), mentre quello
+    di ieri era del \$Info{DUInodeDailyMaxPrev}%.
 </ul>
 </p>
 
@@ -174,6 +182,7 @@ Ci sono \$hostCntGood host sottoposti a backup per un totale di:
 <table class="sortable" id="host_summary_backups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Host </td>
     <td align="center"> Utente </td>
+    <td align=";enter"> Commento </td>
     <td align="center"> Completi </td>
     <td align="center"> Et&agrave; completi (giorni) </td>
     <td align="center"> Dimensione completi (GiB) </td>
@@ -186,7 +195,6 @@ Ci sono \$hostCntGood host sottoposti a backup per un totale di:
     <td align="center"> Ultimo tentativo </td></tr>
 \$strGood
 </table>
-<br><br>
 \${h2("Host senza backup")}
 <p>
 Ci sono \$hostCntNone host senza alcun backup.
@@ -194,6 +202,7 @@ Ci sono \$hostCntNone host senza alcun backup.
 <table class="sortable" id="host_summary_nobackups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Host </td>
     <td align="center"> Utente </td>
+    <td align=";enter"> Commento </td>
     <td align="center"> Completi </td>
     <td align="center"> Et&agrave; completi (giorni) </td>
     <td align="center"> Dimensione completi (GiB) </td>
@@ -298,7 +307,7 @@ EOF
 
 $Lang{BackupPC_Archive2_parity} = <<EOF;
 <tr>
-    <td>Percentuale di dati di parità (0 = disabiltata, 5 = valori tipici)</td>
+    <td>Percentuale di dati di paritï¿½ (0 = disabiltata, 5 = valori tipici)</td>
     <td><input type="numeric" value="\$ArchivePar" name="par"></td>
 </tr>
 EOF
@@ -309,7 +318,7 @@ $Lang{BackupPC_Archive2_split} = <<EOF;
     <td><input type="numeric" value="\$ArchiveSplit" name="splitsize">Megabyte </td>
 </tr>
 EOF
-  
+
 # -----------------------------------
 $Lang{Pool_Stat} = <<EOF;
         <li>Il pool di \${poolSize}GiB comprende \$info->{"\${name}FileCnt"}
@@ -322,6 +331,7 @@ EOF
 
 # --------------------------------
 $Lang{BackupPC__Backup_Requested_on__host} = "BackupPC: richiesta di backup per \$host";
+$Lang{BackupPC__Delete_Requested_for_a_backup_of__host} = "BackupPC: Delete Requested for a backup of \$host";
 # --------------------------------
 $Lang{REPLY_FROM_SERVER} = <<EOF;
 \${h1(\$str)}
@@ -364,8 +374,8 @@ Si sta per arrestare/disaccodare i backup per \$host;
 <input type="hidden" name="host"   value="\$host">
 <input type="hidden" name="doit"   value="1">
 <input type="hidden" name="action" value="">
-Also, please don\'t start another backup for
-<input type="text" name="backoff" size="10" value="\$backoff"> hours.
+Inoltre, non avviare ulteriori backup per
+<input type="text" name="backoff" size="10" value="\$backoff"> ora/e.
 <p>
 Arrestare veramente?
 <input type="button" value="\$buttonText"
@@ -384,36 +394,36 @@ $Lang{BackupPC__Queue_Summary} = "BackupPC: Prospetto coda";
 # --------------------------------
 $Lang{Backup_Queue_Summary} = <<EOF;
 \${h1("Prospetto coda di backup")}
-<br><br>
 \${h2("Prospetto code utenti")}
 <p>
 Sono state accodate le seguenti richieste degli utenti:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Host </td>
+    <td> Action </td>
     <td> Data richiesta </td>
     <td> Utente </td></tr>
 \$strUser
 </table>
-<br><br>
 
 \${h2("Prospetto code in background")}
 <p>
 Sono attualmente in coda le seguenti richieste di background:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Host </td>
+    <td> Action </td>
     <td> Data richiesta </td>
     <td> Utente </td></tr>
 \$strBg
 </table>
-<br><br>
 \${h2("Prospetto coda comandi")}
 <p>
 Sono attualmente in coda le seguenti richieste di comandi:
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Host </td>
+    <td> Action </td>
     <td> Data richiesta </td>
     <td> Utente </td>
     <td> Comando </td></tr>
@@ -442,7 +452,7 @@ $Lang{BackupPC__Log_File_History} = "BackupPC: cronologia file di log";
 $Lang{Log_File_History__hdr} = <<EOF;
 \${h1("Cronologia file di log \$hdr")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> File </td>
     <td align="center"> Dimensione </td>
     <td align="center"> Data modifica </td></tr>
@@ -454,7 +464,7 @@ EOF
 $Lang{Recent_Email_Summary} = <<EOF;
 \${h1("Prospetto email recenti (ordine cronologico inverso)")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Destinatario </td>
     <td align="center"> Host </td>
     <td align="center"> Data </td>
@@ -462,7 +472,7 @@ $Lang{Recent_Email_Summary} = <<EOF;
 \$str
 </table>
 EOF
- 
+
 
 # ------------------------------
 $Lang{Browse_backup__num_for__host} = "BackupPC: Sfoglia backup \$num per \$host";
@@ -531,7 +541,7 @@ $Lang{Restore_Options_for__host_Option1_disabled} = <<EOF;
 Il ripristino diretto &egrave; stato disabilitato per l\'host host \${EscHTML(\$hostDest)}.
 Per favore, seleziona uno degli altri metodi di ripristino.
 EOF
-  
+
 # ------------------------------
 $Lang{Option_2__Download_Zip_archive} = <<EOF;
 <p>
@@ -661,7 +671,35 @@ $Lang{BackupPC_Archive_Reply_from_server} = <<EOF;
 La risposta del server &egrave; stata: \$reply
 EOF
 
-  
+
+# --------------------------------
+$Lang{BackupPC__Delete_Backup_Confirm__num_of__host} = "BackupPC: Delete Backup Confirm #\$num of \$host";
+# --------------------------------
+$Lang{A_filled} = "a filled";
+$Lang{An_unfilled} = "an unfilled";
+$Lang{Are_you_sure_delete} = <<EOF;
+\${h1("Are you sure?")}
+<p>
+You are about to delete \$filled \$type backup #\$num of \$host.
+
+<form name="Confirm" action="\$MyURL" method="get">
+
+<input type="hidden" name="host" value="\${EscHTML(\$host)}">
+<input type="hidden" name="num" value="\$num">
+
+<input type="hidden" name="doit" value="1">
+<input type="hidden" name="action" value="">
+
+Do you really want to do this?
+
+<input type="button" value="\${EscHTML(\$Lang->{CfgEdit_Button_Delete})}"
+ onClick="document.Confirm.action.value='deleteBackup';
+          document.Confirm.submit();">
+
+<input type="submit" value="No" name="ignore">
+</form>
+EOF
+
 # -------------------------
 $Lang{Host__host_Backup_Summary} = "BackupPC: prospetto backup host \$host";
 
@@ -690,14 +728,15 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 <p>
 Cliccare sul numero di backup per sfogliare e ripristinare i file di backup.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> Numero backup </td>
     <td align="center"> Tipo </td>
-    <td align="center"> Completo </td>
+    <td align="center"> Filled </td>
     <td align="center"> Livello </td>
     <td align="center"> Data avvio </td>
     <td align="center"> Durata (minuti) </td>
     <td align="center"> Et&agrave; (giorni) </td>
+    \$deleteHdrStr
     <td align="center"> Percorso backup server </td>
 </tr>
 \$str
@@ -706,10 +745,8 @@ Cliccare sul numero di backup per sfogliare e ripristinare i file di backup.
 
 \$restoreStr
 </p>
-<br><br>
 \${h2("Prospetto errori trasferimento")}
-<br><br>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Numero backup </td>
     <td align="center"> Tipo </td>
     <td align="center"> Vedere </td>
@@ -720,7 +757,6 @@ Cliccare sul numero di backup per sfogliare e ripristinare i file di backup.
 </tr>
 \$errStr
 </table>
-<br><br>
 
 \${h2("Prospetto dimensioni file/contatore riutilizzo")}
 <p>
@@ -729,13 +765,13 @@ quelli aggiunti al pool.
 I file vuoti e gli errori SMB non sono conteggiati nei contatori di
 riutilizzo e file nuovi.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="2" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> Totali </td>
     <td align="center" colspan="2"> File esistenti </td>
     <td align="center" colspan="2"> File nuovi </td>
 </tr>
-<tr class="tableheader">
+<tr class="tableheader sortheader">
     <td align="center"> Numero backup </td>
     <td align="center"> Tipo </td>
     <td align="center"> Numero file </td>
@@ -748,19 +784,18 @@ riutilizzo e file nuovi.
 </tr>
 \$sizeStr
 </table>
-<br><br>
 
 \${h2("Prospetto compressione")}
 <p>
 Prestazione della compressione per file gi&agrave; nel pool e per quelli
 nuovi.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="3" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> File esistenti </td>
     <td align="center" colspan="3"> File nuovi </td>
 </tr>
-<tr class="tableheader"><td align="center"> Numero backup </td>
+<tr class="tableheader sortheader"><td align="center"> Numero backup </td>
     <td align="center"> Tipo </td>
     <td align="center"> Livello compressione </td>
     <td align="center"> Dimensione (MB) </td>
@@ -772,7 +807,6 @@ nuovi.
 </tr>
 \$compStr
 </table>
-<br><br>
 EOF
 
 $Lang{Host__host_Archive_Summary} = "BackupPC: prospetto archivi host \$host";
@@ -833,11 +867,11 @@ $Lang{Backup_browse_for__host} = <<EOF;
         }
       }
     }
-    
+
     function toggleThis(checkbox)
     {
        var cb = eval("document.form1."+checkbox);
-       cb.checked = !cb.checked;	
+       cb.checked = !cb.checked;
     }
 
 //-->
@@ -911,7 +945,7 @@ Questa videata mostra tutte le versioni uniche disponibili nei diversi backup:
 <li> Fare clic sul collegamento ad un file (\$Lang->{DirHistory_fileLink}0,
      \$Lang->{DirHistory_fileLink}1, ...) per scaricare quel file
 <li> I file con lo stesso contenuto fra backup diversi hanno lo stesso
-     numero di versione
+     numero di versione (ad esclusione di backup tra versione v3 e v4)
 <li> I file o directory non disponibili in uno specifico backup presentano
      una casella vuota
 <li> I file visualizzati con la stessa versione possono avere attributi
@@ -1002,11 +1036,11 @@ $Lang{Email_Summary} = "BackupPC: Prospetto email";
 #  !! ERROR messages !!
 # -----------------------------------
 $Lang{BackupPC__Lib__new_failed__check_apache_error_log} = "BackupPC::Lib->new fallita: controllare il file error_log di Apache\n";
-$Lang{Wrong_user__my_userid_is___} =  
+$Lang{Wrong_user__my_userid_is___} =
               "Utente errato: il mio ID utente &egrave; \$> invece di \$uid"
             . "(\$Conf{BackupPCUser})\n";
 # $Lang{Only_privileged_users_can_view_PC_summaries} = "Solo gli utenti privilegiati possono visualizzare i prospetti dei PC.";
-$Lang{Only_privileged_users_can_stop_or_start_backups} = 
+$Lang{Only_privileged_users_can_stop_or_start_backups} =
                   "Solo gli utenti privilegiati possono arrestare o avviare un backup su"
 		. " \${EscHTML(\$host)}.";
 $Lang{Invalid_number__num} = "Numero non valido: \${EscHTML(\$In{num})}";
@@ -1016,6 +1050,8 @@ $Lang{Only_privileged_users_can_view_log_files} = "Solo gli utenti privilegiati 
 $Lang{Only_privileged_users_can_view_email_summaries} = "Solo gli utenti privilegiati possono visualizzare il prospetto delle email.";
 $Lang{Only_privileged_users_can_browse_backup_files} = "Solo gli utenti privilegiati possono sfogliare i file di backup"
                 . " per l\'host \${EscHTML(\$In{host})}.";
+$Lang{Only_privileged_users_can_delete_backups} = "Only privileged users can delete backups"
+                . " of host \${EscHTML(\$host)}.";
 $Lang{Empty_host_name} = "Nome host vuoto.";
 $Lang{Directory___EscHTML} = "La directory \${EscHTML(\"\$TopDir/pc/\$host/\$num\")}"
 		    . " &egrave; vuota";
@@ -1068,6 +1104,8 @@ $Lang{Backup_stopped_dequeued_on__host_by__User} = "Backup arrestato/disaccodato
 
 $Lang{Restore_requested_to_host__hostDest__backup___num} = "Richiesta di ripristino per l\'host \$hostDest, backup  numero \$num,"
 	     . " da parte di \$User da \$ENV{REMOTE_ADDR}";
+$Lang{Delete_requested_for_backup_of__host_by__User} = "Delete requested for backup #\$num of \$host"
+             . " by \$User from \$ENV{REMOTE_ADDR}";
 $Lang{Archive_requested} = "Archivio richiesto da parte di \$User da \$ENV{REMOTE_ADDR}";
 
 # -------------------------------------------------
@@ -1177,7 +1215,7 @@ $Lang{checkAllHosts} = <<EOF;
 <input type="submit" name="Submit" value="Archivia host selezionati">
 </td></tr>
 EOF
- 
+
 $Lang{fileHeader} = <<EOF;
     <tr class="fviewheader"><td align=center> Nome </td>
        <td align="center"> Tipo </td>
@@ -1205,7 +1243,7 @@ $Lang{Restore_Summary} = <<EOF;
 \${h2("Prospetto ripristino")}
 <p>
 Fare clic sul numero del ripristino per maggiori dettagli.
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Numero ripristino </td>
     <td align="center"> Risultato </td>
     <td align="right"> Data avvio</td>
@@ -1248,9 +1286,9 @@ EOF
 #$Lang{on} = "acceso";
 $Lang{off} = "spento";
 
-$Lang{backupType_full} = "comp.";
-$Lang{backupType_incr} = "incr.";
-$Lang{backupType_active}  = "active";
+$Lang{backupType_full} = "completo";
+$Lang{backupType_incr} = "incrementale";
+$Lang{backupType_active}  = "in esecuzione";
 $Lang{backupType_partial} = "parziale";
 
 $Lang{failed} = "fallito";
@@ -1263,7 +1301,7 @@ $Lang{Status_idle} = "inattivo";
 $Lang{Status_backup_starting} = "avvio backup";
 $Lang{Status_backup_in_progress} = "backup in esecuzione";
 $Lang{Status_restore_starting} = "avvio ripristino";
-$Lang{Status_restore_in_progress} = "restore in esecuzione";
+$Lang{Status_restore_in_progress} = "ripristino in esecuzione";
 $Lang{Status_admin_pending} = "collegamenti pendenti";
 $Lang{Status_admin_running} = "collegamenti in esecuzione";
 
@@ -1278,8 +1316,8 @@ $Lang{Reason_no_ping}        = "no ping";
 $Lang{Reason_backup_canceled_by_user}  = "backup annullato dall\'utente";
 $Lang{Reason_restore_canceled_by_user} = "ripristino annullato dall\'utente";
 $Lang{Reason_archive_canceled_by_user} = "archivio annullato dall\'utente";
-$Lang{Disabled_OnlyManualBackups}  = "auto disabilitato";  
-$Lang{Disabled_AllBackupsDisabled} = "disabilitato";                  
+$Lang{Disabled_OnlyManualBackups}  = "auto disabilitato";
+$Lang{Disabled_AllBackupsDisabled} = "disabilitato";
 
 # ---------
 # Email messages
@@ -1310,7 +1348,7 @@ prossima volta che sei in ufficio.
 Ciao.
 
 BackupPC Genie
-http://backuppc.sourceforge.net/
+https://backuppc.github.io/backuppc
 EOF
 
 # No recent backup
@@ -1339,7 +1377,7 @@ e gli allegati) non possono essere ripristinato se il tuo PC si guasta.
 Ciao.
 
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # Old Outlook files
@@ -1363,7 +1401,7 @@ collegato alla rete. E` sufficiente uscire da Outlook e da tutte le altre
 applicazioni e, semplicemente usando il tuo programma di navigazione,
 andare alla seguente pagina:
 
-    $CgiURL?host=$host               
+    $CgiURL?host=$host
 
 Seleziona "Avvia backup incrementale" due volte per avviare un nuovo
 backup incrementale. E` possibile selezionare "Ritorna alla pagina di
@@ -1373,7 +1411,7 @@ Il backup dovrebbe essere pronto entro pochi minuti.
 Ciao.
 
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 $Lang{howLong_not_been_backed_up} = "non e` riuscito";
@@ -1392,6 +1430,7 @@ Velocit&agrave; (MB/s): \$fullRate;
 Incrementali: \$incrCnt;
 Et&agrave; incrementali (giorni): \$incrAge;
 Stato: \$host_state;
+Disabilitato: \$host_disabled;
 Ultimo tentativo: \$host_last_attempt;
 EOF
 
@@ -1446,7 +1485,7 @@ $Lang{CfgEdit_Title_User_Commands} = "Comandi Utente";
 $Lang{CfgEdit_Title_Hosts} = "Hosts";
 
 $Lang{CfgEdit_Hosts_Comment} = <<EOF;
-Per aggiungere un nuovo host, seleziona Aggiungi e inserisci il nome. 
+Per aggiungere un nuovo host, seleziona Aggiungi e inserisci il nome.
 Per aggiungere un nuovo host partendo dalla configurazione di un altro
 host, inserisci il nome dell\'host con il formato NUOVOHOST=HOSTDACOPIARE.
 Questo sovrascriver&aacute; qualsiasi eventuale configurazione per il
@@ -1510,4 +1549,3 @@ $Lang{CfgEdit_Log_Host_Change}
             = "\$User host \$host ha cambiato \$key da \$valueOld in \$valueNew\n";
 $Lang{CfgEdit_Log_Host_Add}
             = "\$User ha aggiunto l\'host \$host: \$value\n";
-

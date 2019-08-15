@@ -94,6 +94,9 @@ $Lang{BackupPC_Server_Status_General_Info}= <<EOF;
         <li>L\'espace de stockage a été récemment rempli à \$Info{DUlastValue}%
             (\$DUlastTime), le maximum aujourd\'hui a été de \$Info{DUDailyMax}% (\$DUmaxTime)
             et hier le maximum était de \$Info{DUDailyMaxPrev}%.
+        <li>Inode L\'espace de stockage a été récemment rempli à \$Info{DUInodelastValue}%
+            (\$DUlastTime), le maximum aujourd\'hui a été de \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)
+            et hier le maximum était de \$Info{DUInodeDailyMaxPrev}%.
     </ul>
 </ul>
 EOF
@@ -104,7 +107,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 <p>
 \${h2("Travaux en cours d'exécution")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td> Hôte </td>
     <td> Type </td>
     <td> Utilisateur </td>
@@ -123,7 +126,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 
 \${h2("Échecs qui demandent de l'attention")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> Hôte </td>
     <td align="center"> Type </td>
     <td align="center"> Utilisateur </td>
@@ -147,6 +150,9 @@ $Lang{BackupPC_Summary}=<<EOF;
 <li>L\'espace de stockage a été récemment rempli à \$Info{DUlastValue}%
     (\$DUlastTime), le maximum aujourd\'hui a été de \$Info{DUDailyMax}% (\$DUmaxTime)
     et hier le maximum était de \$Info{DUDailyMaxPrev}%.
+<li>Inode L\'espace de stockage a été récemment rempli à \$Info{DUInodelastValue}%
+    (\$DUlastTime), le maximum aujourd\'hui a été de \$Info{DUInodeDailyMax}% (\$DUInodemaxTime)
+    et hier le maximum était de \$Info{DUInodeDailyMaxPrev}%.
 </ul>
 </p>
 
@@ -163,6 +169,7 @@ Il y a \$hostCntGood hôtes ayant été sauvegardés, pour un total de :
 <table class="sortable" id="host_summary_backups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Hôte </td>
     <td align="center"> Utilisateur </td>
+    <td align="center"> Commentaire </td>
     <td align="center"> Nb complètes </td>
     <td align="center"> Complètes Âge (jours) </td>
     <td align="center"> Complètes Taille (Go) </td>
@@ -175,7 +182,6 @@ Il y a \$hostCntGood hôtes ayant été sauvegardés, pour un total de :
     <td align="center"> Dernière tentative </td></tr>
 \$strGood
 </table>
-<br><br>
 \${h2("Hôtes sans sauvegardes")}
 <p>
 Il y a \$hostCntNone hôtes sans sauvegardes.
@@ -183,6 +189,7 @@ Il y a \$hostCntNone hôtes sans sauvegardes.
 <table class="sortable" id="host_summary_nobackups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> Hôte </td>
     <td align="center"> Utilisateur </td>
+    <td align="center"> Commentaire </td>
     <td align="center"> Nb complètes </td>
     <td align="center"> Complètes Âge (jours) </td>
     <td align="center"> Complètes Taille (Go) </td>
@@ -310,6 +317,7 @@ EOF
 
 # -----------------------------------
 $Lang{BackupPC__Backup_Requested_on__host} = "BackupPC: Sauvegarde demandée sur \$host";
+$Lang{BackupPC__Delete_Requested_for_a_backup_of__host} = "BackupPC: Delete Requested for a backup of \$host";
 # --------------------------------
 $Lang{REPLY_FROM_SERVER} = <<EOF;
 \${h1(\$str)}
@@ -372,36 +380,36 @@ $Lang{BackupPC__Queue_Summary} = "BackupPC: Résumé de la file";
 # --------------------------------
 $Lang{Backup_Queue_Summary} = <<EOF;
 \${h1("Résumé de la file")}
-<br><br>
 \${h2("Résumé des files des utilisateurs")}
 <p>
 Les demandes utilisateurs suivantes sont actuellement en attente :
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Hôte </td>
+    <td> Action </td>
     <td> Temps Requis </td>
     <td> Utilisateur </td></tr>
 \$strUser
 </table>
-<br><br>
 
 \${h2("Résumé de la file en arrière plan")}
 <p>
 Les demandes en arrière plan suivantes sont actuellement en attente :
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Hôte </td>
+    <td> Action </td>
     <td> Temps requis </td>
     <td> Utilisateur </td></tr>
 \$strBg
 </table>
-<br><br>
 \${h2("Résumé de la file d\'attente des commandes")}
 <p>
 Les demandes de commande suivantes sont actuellement en attente :
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> Hôtes </td>
+    <td> Action </td>
     <td> Temps Requis </td>
     <td> Utilisateur </td>
     <td> Commande </td></tr>
@@ -430,7 +438,7 @@ $Lang{BackupPC__Log_File_History} = "BackupPC: Historique du fichier journal";
 $Lang{Log_File_History__hdr} = <<EOF;
 \${h1("Historique du fichier journal \$hdr")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Fichier </td>
     <td align="center"> Taille </td>
     <td align="center"> Date de modification </td></tr>
@@ -442,7 +450,7 @@ EOF
 $Lang{Recent_Email_Summary} = <<EOF;
 \${h1("Résumé des courriels récents (du plus récent au plus vieux)")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Destinataire </td>
     <td align="center"> Hôte </td>
     <td align="center"> Date </td>
@@ -647,6 +655,34 @@ La réponse du serveur est : \$reply
 EOF
 
 
+# --------------------------------
+$Lang{BackupPC__Delete_Backup_Confirm__num_of__host} = "BackupPC: Delete Backup Confirm #\$num of \$host";
+# --------------------------------
+$Lang{A_filled} = "a filled";
+$Lang{An_unfilled} = "an unfilled";
+$Lang{Are_you_sure_delete} = <<EOF;
+\${h1("Are you sure?")}
+<p>
+You are about to delete \$filled \$type backup #\$num of \$host.
+
+<form name="Confirm" action="\$MyURL" method="get">
+
+<input type="hidden" name="host" value="\${EscHTML(\$host)}">
+<input type="hidden" name="num" value="\$num">
+
+<input type="hidden" name="doit" value="1">
+<input type="hidden" name="action" value="">
+
+Do you really want to do this?
+
+<input type="button" value="\${EscHTML(\$Lang->{CfgEdit_Button_Delete})}"
+ onClick="document.Confirm.action.value='deleteBackup';
+          document.Confirm.submit();">
+
+<input type="submit" value="No" name="ignore">
+</form>
+EOF
+
 # -------------------------
 $Lang{Host__host_Backup_Summary} = "BackupPC: Résumé de la sauvegarde de l\'hôte \$host ";
 
@@ -676,7 +712,7 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 <p>
 Cliquer sur le numéro de l\'archive pour naviguer et restaurer les fichiers de sauvegarde.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> Sauvegarde n° </td>
     <td align="center"> Type </td>
     <td align="center"> Fusionnée </td> 
@@ -684,6 +720,7 @@ Cliquer sur le numéro de l\'archive pour naviguer et restaurer les fichiers de s
     <td align="center"> Date de démarrage </td>
     <td align="center"> Durée (min) </td>
     <td align="center"> Âge (jours) </td>
+    \$deleteHdrStr
     <td align="center"> Chemin d\'accès de la sauvegarde sur le serveur </td>
 </tr>
 \$str
@@ -692,10 +729,8 @@ Cliquer sur le numéro de l\'archive pour naviguer et restaurer les fichiers de s
 
 \$restoreStr
 </p>
-<br><br>
 \${h2("Résumé des erreurs de transfert")}
-<br><br>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Sauvegarde n° </td>
     <td align="center"> Type </td>
     <td align="center"> Voir </td>
@@ -706,7 +741,6 @@ Cliquer sur le numéro de l\'archive pour naviguer et restaurer les fichiers de s
 </tr>
 \$errStr
 </table>
-<br><br>
 
 \${h2("Récapitulatif de la taille des fichier et du nombre de réutilisations")}
 <p>
@@ -714,13 +748,13 @@ Les fichiers existants sont ceux qui sont déjà sur le serveur;
 Les nouveaux fichiers sont ceux qui ont été ajoutés au serveur.
 Les fichiers vides et les erreurs de SMB ne sont pas comptabilisés dans les fichiers nouveaux ou réutilisés.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="2" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> Totaux </td>
     <td align="center" colspan="2"> Fichiers existants </td>
     <td align="center" colspan="2"> Nouveaux fichiers </td>
 </tr>
-<tr class="tableheader">
+<tr class="tableheader sortheader">
     <td align="center"> Sauvegarde n° </td>
     <td align="center"> Type </td>
     <td align="center"> Nb de Fichiers </td>
@@ -733,19 +767,18 @@ Les fichiers vides et les erreurs de SMB ne sont pas comptabilisés dans les fich
 </tr>
 \$sizeStr
 </table>
-<br><br>
 
 \${h2("Résumé de la compression")}
 <p>
 Performance de la compression pour les fichiers déjà sur le serveur et
 récemment compressés.
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="3" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> Fichiers existants </td>
     <td align="center" colspan="3"> Nouveaux fichiers </td>
 </tr>
-<tr class="tableheader"><td align="center"> Nb de sauvegardes </td>
+<tr class="tableheader sortheader"><td align="center"> Nb de sauvegardes </td>
     <td align="center"> Type </td>
     <td align="center"> Niveau de Compression </td>
     <td align="center"> Taille (Mo) </td>
@@ -757,7 +790,6 @@ récemment compressés.
 </tr>
 \$compStr
 </table>
-<br><br>
 EOF
 
 $Lang{Host__host_Archive_Summary} = "BackupPC: Résumé de l'archivage pour l'hôte \$host";
@@ -897,7 +929,7 @@ Cette page montre toutes les version disponibles des fichiers sauvegardés pour l
 <li> Cliquez sur une version d'un fichier (\$Lang->{DirHistory_fileLink}0,
      \$Lang->{DirHistory_fileLink}1, ...) pour le télécharger.
 <li> Les fichiers avec des contenus identiques pour plusieurs sauvegardes ont 
-     le même numéro de version.
+     le même numéro de version (PleaseTranslateThis: except between v3 and v4 backups).
 <li> Les fichiers qui ne sont pas présents sur une sauvegarde en particulier 
      sont représentés par une boîte vide.
 <li> Les fichiers montrés avec la même version peuvent avoir des attributs différents. 
@@ -1001,6 +1033,8 @@ $Lang{Only_privileged_users_can_view_log_files} = "Seuls les utilisateurs privil
 $Lang{Only_privileged_users_can_view_email_summaries} = "Seuls les utilisateurs privilégiés peuvent voir les compte-rendus des courriels.";
 $Lang{Only_privileged_users_can_browse_backup_files} = "Seuls les utilisateurs privilégiés peuvent parcourir les fichiers de sauvegarde"
                  . " pour l'hôte \${EscHTML(\$In{host})}.";
+$Lang{Only_privileged_users_can_delete_backups} = "Only privileged users can delete backups"
+                . " of host \${EscHTML(\$host)}.";
 $Lang{Empty_host_name} = "Nom d\'hôte vide.";
 $Lang{Directory___EscHTML} = "Le répertoire \${EscHTML(\"\$TopDir/pc/\$host/\$num\")}"
 		    . " est vide";
@@ -1051,6 +1085,8 @@ $Lang{Backup_requested_on__host_by__User} = "Sauvegarde demandée sur \$host par 
 $Lang{Backup_stopped_dequeued_on__host_by__User} = "Sauvegarde arrêtée/déprogrammée pour \$host par \$User";
 $Lang{Restore_requested_to_host__hostDest__backup___num} = "Restauration demandée pour l\'hôte \$hostDest, "
              . "sauvegarde n°\$num, par \$User depuis \$ENV{REMOTE_ADDR}";
+$Lang{Delete_requested_for_backup_of__host_by__User} = "Delete requested for backup #\$num of \$host"
+             . " by \$User from \$ENV{REMOTE_ADDR}";
 $Lang{Archive_requested} = "Archivage demandé par \$User de \$ENV{REMOTE_ADDR}";
 
 # -------------------------------------------------
@@ -1188,7 +1224,7 @@ $Lang{Restore_Summary} = <<EOF;
 \${h2("Résumé de la restauration")}
 <p>
 Cliquer sur le numéro de restauration pour plus de détails.
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> Sauvegarde n° </td>
     <td align="center"> Résultat </td>
     <td align="right"> Date de départ</td>
@@ -1294,7 +1330,7 @@ ordinateur est correctement connecté au réseau.
 
 Merci de votre attention,
 BackupPC Génie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # No recent backup
@@ -1325,7 +1361,7 @@ avec votre ordinateur.
 
 Merci de votre attention,
 BackupPC Génie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # Old Outlook files
@@ -1357,7 +1393,7 @@ sauvegarde devrait prendre quelques minutes à s'effectuer.
 
 Merci de votre attention,
 BackupPC Génie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 $Lang{howLong_not_been_backed_up} = "jamais été sauvegardés";
@@ -1376,6 +1412,7 @@ Vitesse (Mo/s) : \$fullRate;
 Nb incrémentielles : \$incrCnt;
 Incrémentielles Âge (jours) : \$incrAge;
 État actuel : \$host_state;
+Désactivée: \$host_disabled;
 Dernière tentative : \$host_last_attempt;
 EOF
 

@@ -10,7 +10,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2003-2013  Craig Barratt
+#   Copyright (C) 2003-2018  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 1 Dec 2013.
+# Version 4.2.2, released 21 Oct 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -75,6 +75,8 @@ sub action
     if ( !$Privileged ) {
         ErrorExit(eval("qq{$Lang->{Only_privileged_users_can_view_information_about}}"));
     }
+    my $deleteEnabled = $PrivAdmin || ($Conf{CgiUserDeleteBackupEnable} > 0 && $Privileged);
+    $deleteEnabled = 0 if ( $Conf{CgiUserDeleteBackupEnable} < 0 );
     ReadUserEmailInfo();
 
     if ( $Conf{XferMethod} eq "archive" ) {
@@ -91,7 +93,7 @@ sub action
             $ArchiveStr  .= <<EOF;
 <tr><td align="center"><a href="$MyURL?action=archiveInfo&num=$Archives[$i]{num}&host=${EscURI($host)}">$Archives[$i]{num}</a> </td>
     <td align="center"> $Archives_Result </td>
-    <td align="right"> $startTime </td>
+    <td align="right" data-date_format="$Conf{CgiDateFormatMMDD}"> $startTime </td>
     <td align="right"> $duration </td>
 </tr>
 EOF
@@ -122,12 +124,19 @@ EOF
     # Normal, non-archive case
     #
     my @Backups = $bpc->BackupInfoRead($host);
-    my($str, $sizeStr, $compStr, $errStr, $warnStr);
+    my(@bkpRows, @sizeRows, @compRows, @errRows, @warnRows, $deleteHdrStr);
+    $deleteHdrStr = '<td align="center"> </td>' if ( $deleteEnabled );
     for ( my $i = 0 ; $i < @Backups ; $i++ ) {
         my($MBExistComp, $ExistComp, $MBNewComp, $NewComp);
         my($dur, $duration, $MB, $MBperSec, $MBExist, $MBNew);
         my $startTime = timeStamp2($Backups[$i]{startTime});
 
+        #
+        # if a backup is active, but there is no job, then force it to be displayed
+        # as partial.  this handles case of a forced exit of BackupPC without normal
+        # cleanup
+        #
+        $Backups[$i]{type} = "partial" if ( $Backups[$i]{type} eq "active" && !defined($StatusHost{Job}) );
         if ( $Backups[$i]{type} ne "active" ) {
             $dur       = $Backups[$i]{endTime} - $Backups[$i]{startTime};
             $dur          = 1 if ( $dur <= 0 );
@@ -156,17 +165,32 @@ EOF
         $filled .= " ($Backups[$i]{fillFromNum}) "
                             if ( $Backups[$i]{fillFromNum} ne "" );
         my $ltype = $Lang->{"backupType_$Backups[$i]{type}"};
-        $str .= <<EOF;
-<tr><td align="center" class="border"> <a href="$browseURL">$Backups[$i]{num}</a> </td>
+        my $deleteStr;
+        if ( $deleteEnabled ) {
+            $deleteStr = <<EOF;
+    <td align="center" class="border"><form name="DeleteForm" action="$MyURL" method="get" style="margin-bottom: 0px;">
+        <input type="hidden" name="action" value="deleteBackup">
+        <input type="hidden" name="host"   value="$host">
+        <input type="hidden" name="num"    value="$Backups[$i]{num}">
+        <input type="hidden" name="nofill" value="$Backups[$i]{noFill}">
+        <input type="hidden" name="type"   value="$Backups[$i]{type}">
+        <input type="submit" value="${EscHTML($Lang->{CfgEdit_Button_Delete})}">
+    </form></td>
+EOF
+        }
+        push @bkpRows, <<EOF;
+<tr>
+    <td align="center" class="border"> <a href="$browseURL">$Backups[$i]{num}</a> </td>
     <td align="center" class="border"> $ltype </td>
     <td align="center" class="border"> $filled </td>
     <td align="center" class="border"> $level </td>
-    <td align="right" class="border">  $startTime </td>
+    <td align="right" class="border" data-date_format="$Conf{CgiDateFormatMMDD}"> $startTime </td>
     <td align="right" class="border">  $duration </td>
     <td align="right" class="border">  $age </td>
+    $deleteStr
     <td align="left" class="border">   <tt>$TopDir/pc/$host/$Backups[$i]{num}</tt> </td></tr>
 EOF
-        $sizeStr .= <<EOF;
+        push @sizeRows, <<EOF;
 <tr><td align="center" class="border"> <a href="$browseURL">$Backups[$i]{num}</a> </td>
     <td align="center" class="border"> $ltype </td>
     <td align="right" class="border">  $Backups[$i]{nFiles} </td>
@@ -181,7 +205,7 @@ EOF
         my $is_compress = $Backups[$i]{compress} || $Lang->{off};
         if (! $ExistComp) { $ExistComp = "&nbsp;"; }
         if (! $MBExistComp) { $MBExistComp = "&nbsp;"; }
-        $compStr .= <<EOF;
+        push @compRows, <<EOF;
 <tr><td align="center" class="border"> <a href="$browseURL">$Backups[$i]{num}</a> </td>
     <td align="center" class="border"> $ltype </td>
     <td align="center" class="border"> $is_compress </td>
@@ -193,7 +217,7 @@ EOF
     <td align="right" class="border">  $NewComp </td>
 </tr>
 EOF
-        $errStr .= <<EOF;
+        push @errRows, <<EOF;
 <tr><td align="center" class="border"> <a href="$browseURL">$Backups[$i]{num}</a> </td>
     <td align="center" class="border"> $ltype </td>
     <td align="center" class="border"> <a href="$MyURL?action=view&type=XferLOG&num=$Backups[$i]{num}&host=${EscURI($host)}">$Lang->{XferLOG}</a>,
@@ -204,9 +228,14 @@ EOF
     <td align="right" class="border">  $Backups[$i]{tarErrs} </td></tr>
 EOF
     }
+    my $str = join("\n", reverse(@bkpRows));
+    my $sizeStr = join("\n", reverse(@sizeRows));
+    my $compStr = join("\n", reverse(@compRows));
+    my $errStr = join("\n", reverse(@errRows));
+    my $warnStr = join("\n", reverse(@warnRows));
 
     my @Restores = $bpc->RestoreInfoRead($host);
-    my $restoreStr;
+    my @restoreRows;
 
     for ( my $i = 0 ; $i < @Restores ; $i++ ) {
         my $startTime = timeStamp2($Restores[$i]{startTime});
@@ -217,10 +246,10 @@ EOF
         my $MBperSec  = sprintf("%.2f", $Restores[$i]{size} / (1024*1024*$dur));
         my $Restores_Result = $Lang->{failed};
         if ($Restores[$i]{result} ne "failed") { $Restores_Result = $Lang->{success}; }
-        $restoreStr  .= <<EOF;
+        push @restoreRows, <<EOF;
 <tr><td align="center" class="border"><a href="$MyURL?action=restoreInfo&num=$Restores[$i]{num}&host=${EscURI($host)}">$Restores[$i]{num}</a> </td>
     <td align="center" class="border"> $Restores_Result </td>
-    <td align="right" class="border"> $startTime </td>
+    <td align="right" class="border" data-date_format="$Conf{CgiDateFormatMMDD}"> $startTime </td>
     <td align="right" class="border"> $duration </td>
     <td align="right" class="border"> $Restores[$i]{nFiles} </td>
     <td align="right" class="border"> $MB </td>
@@ -229,6 +258,7 @@ EOF
 </tr>
 EOF
     }
+    my $restoreStr = join("\n", reverse(@restoreRows));
     if ( $restoreStr ne "" ) {
         $restoreStr = eval("qq{$Lang->{Restore_Summary}}");
     }
@@ -268,9 +298,9 @@ EOF
             $statusStr  .= eval("qq{$Lang->{Last_email_sent_to__was_at___subject}}");
         }
     }
-    if ( defined($Jobs{$host}) ) {
-        my $startTime = timeStamp2($Jobs{$host}{startTime});
-        (my $cmd = $Jobs{$host}{cmd}) =~ s/$BinDir\///g;
+    if ( defined($StatusHost{Job}) ) {
+        my $startTime = timeStamp2($StatusHost{Job}{startTime});
+        (my $cmd = $StatusHost{Job}{cmd}) =~ s/$BinDir\///g;
         $statusStr .= eval("qq{$Lang->{The_command_cmd_is_currently_running_for_started}}");
     }
     if ( $StatusHost{BgQueueOn} ) {
@@ -356,6 +386,9 @@ EOF
         my $hours = sprintf("%.1f", ($StatusHost{backoffTime} - time) / 3600);
         $statusStr .= eval("qq{$Lang->{Backups_are_deferred_for_hours_hours_change_this_number}}");
 
+    }
+    if ( length($Conf{ClientComment}) ) {
+        $statusStr .= "<li>${EscHTML($Conf{ClientComment})}\n";
     }
     if ( @Backups ) {
         # only allow incremental if there are already some backups

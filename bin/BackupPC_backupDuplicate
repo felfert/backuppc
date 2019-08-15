@@ -14,7 +14,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2001-2013  Craig Barratt
+#   Copyright (C) 2001-2018  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 1 Dec 2013.
+# Version 4.2.2, released 22 May 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -39,7 +39,7 @@
 
 use strict;
 no  utf8;
-use lib "__INSTALLDIR__/lib";
+use lib "/usr/local/BackupPC/lib";
 use Getopt::Std;
 use File::Copy;
 use File::Path;
@@ -60,14 +60,14 @@ die("BackupPC::Lib->new failed\n") if ( !(my $bpc = BackupPC::Lib->new) );
 my $TopDir = $bpc->TopDir();
 my $BinDir = $bpc->BinDir();
 my %Conf   = $bpc->Conf();
-my $s      = $bpc->{storage};
+my $Hosts  = $bpc->HostInfoRead();
 
 my %opts;
 
-if ( !getopts("ph:", \%opts) || @ARGV >= 1 ) {
+if ( !getopts("ph:", \%opts) || @ARGV >= 1 || !defined($opts{h}) ) {
     print STDERR <<EOF;
-usage: BackupPC_backupDuplicate [options] files/directories...
-  Required options:
+usage: BackupPC_backupDuplicate -h host [-p]
+  Options:
      -h host         host name
      -p              don't print progress information
 EOF
@@ -75,7 +75,8 @@ EOF
 }
 
 if ( $opts{h} !~ /^([\w\.\s-]+)$/
-        || $opts{h} =~ m{(^|/)\.\.(/|$)} ) {
+        || $opts{h} =~ m{(^|/)\.\.(/|$)}
+        || !defined($Hosts->{$opts{h}}) ) {
     print(STDERR "BackupPC_backupDuplicate: bad host name '$opts{h}'\n");
     exit(1);
 }
@@ -88,6 +89,13 @@ if ( defined(my $error = $bpc->ConfigRead($Host)) ) {
 BackupPC::XS::Lib::logLevelSet($Conf{XferLogLevel});
 my $LogLevel = $Conf{XferLogLevel};
 $bpc->ChildInit();
+
+#
+# Write new-style attrib files (<= 4.0.0beta3 uses old-style), which are 0-length
+# files with the digest encoded in the file name (eg: attrib_md5HexDigest). We
+# can still read the old-style files, and we upgrade them as we go.
+#
+BackupPC::XS::Attrib::backwardCompat(0, 0);
 
 my @Backups = $bpc->BackupInfoRead($Host);
 
@@ -105,14 +113,17 @@ if ( @Backups == 0 || !defined($lastIdx) ) {
 }
 my $Compress = $Backups[$lastIdx]{compress};
 my $SrcDir   = "$TopDir/pc/$Host/$lastNum";
-$newNum = $lastNum + 1;
-$newIdx = $lastIdx + 1;
-my $DestDir  = "$TopDir/pc/$Host/$newNum";
-my $Inode = 1;
+my $Inode    = 1;
+my $DestDir;
+$newIdx = @Backups;
+$newNum = $lastNum;
+do {
+    $newNum++;
+    $DestDir = "$TopDir/pc/$Host/$newNum";
+} while ( -d $DestDir );
 
-if ( -d $DestDir ) {
-    print(STDERR "BackupPC_backupDuplicate: destination directory #$newNum already exists for host $Host\n");
-    exit(1);
+for ( my $i = 0 ; $i < @Backups ; $i++ ) {
+    $Inode = $Backups[$i]{inodeLast} + 1 if ( $Inode <= $Backups[$i]{inodeLast} );
 }
 
 %{$Backups[$newIdx]}        = %{$Backups[$lastIdx]};
@@ -121,27 +132,22 @@ $Backups[$newIdx]{noFill}   = 0;
 $Backups[$newIdx]{compress} = $Compress;
 $Backups[$newIdx]{version}  = $bpc->Version();
 
-BackupPC::XS::PoolRefCnt::DeltaFileInit("$TopDir/pc/$Host");
+print("__bpc_pidStart__ $$\n") if ( !$opts{p} );
+
+createFsckFile($DestDir);
 $bpc->flushXSLibMesgs();
+
 if ( $Backups[$lastIdx]{version} >= 4 ) {
     #
-    # Duplicate a V4 backup by moving #lastNum to #newNum, and then
-    # copying #newNum back to #lastNum.  If we get killed, #newNum
-    # is not disturbed.
+    # Duplicate a V4 backup by copying #lastNum to #newNum.
+    # We write directly to $DestDir.
     #
     if ( !$opts{p} ) {
-        print("__bpc_progress_state__ copy #$newNum -> #$lastNum\n");
+        print("__bpc_progress_state__ copy #$lastNum -> #$newNum\n");
     }
-    if ( !rename($SrcDir, $DestDir) ) {
-        print(STDERR "BackupPC_backupDuplicate: cannot rename $SrcDir to $DestDir\n");
-        exit(1);
-    }
-    print("Renamed backup #$lastNum to #$newNum\n") if ( $LogLevel >= 1 );
-    my $d    = $SrcDir;
-    $SrcDir  = $DestDir;
-    $DestDir = $d;
     if ( !chdir($SrcDir) ) {
         print(STDERR "BackupPC_backupDuplicate: cannot chdir to $SrcDir\n");
+        print("__bpc_pidEnd__ $$\n") if ( !$opts{p} );
         exit(1);
     }
     #
@@ -149,22 +155,15 @@ if ( $Backups[$lastIdx]{version} >= 4 ) {
     # once we finish successfully.
     #
     $Backups[$lastIdx]{noFill} = 1;
-    $bpc->BackupInfoWrite($Host, @Backups);
-    #
-    # Create a needFsck file, so if we are killed and can't recover, we can
-    # make sure an fsck is run next time.
-    #
-    my $needFsckFH;
-    if ( !(open($needFsckFH, ">", "$TopDir/pc/$Host/refCnt/needFsck.dup") && close($needFsckFH)) ) {
-        print(\"BackupPC_backupDuplicate: can't create $TopDir/pc/$Host/refCnt/needFsck.dup ($?)\n");
-    }
-    print("Copying backup #$newNum to #$lastNum\n") if ( $LogLevel >= 1 );
+    print("Copying backup #$lastNum to #$newNum\n") if ( $LogLevel >= 1 );
     copy_v4_file(".", ".");
     BackupPC::DirOps::find($bpc, {wanted => \&copy_v4_file}, ".", 1);
     $Backups[$lastIdx]{noFill} = 0 if ( $ErrorCnt == 0 );
+    printProgress(1);
 } else {
     #
-    # Duplicate a V3 backup, and turn it into a filled V4 backup
+    # Duplicate a V3 backup, and turn it into a filled V4 backup.
+    # We write directly to $DestDir.
     #
     if ( !$opts{p} ) {
         print("__bpc_progress_state__ copy #$lastNum -> #$newNum\n");
@@ -179,21 +178,14 @@ if ( $Backups[$lastIdx]{version} >= 4 ) {
     $Backups[$newIdx]{sizeNew}       = 0;
     $Backups[$newIdx]{sizeNewComp}   = 0;
 
-    $bpc->BackupInfoWrite($Host, @Backups);
-    #
-    # Create a needFsck file, so if we are killed and can't recover, we can
-    # make sure an fsck is run next time.
-    #
-    my $needFsckFH;
-    if ( !(open($needFsckFH, ">", "$TopDir/pc/$Host/refCnt/needFsck.dup") && close($needFsckFH)) ) {
-        print(\"BackupPC_backupDuplicate: can't create $TopDir/pc/$Host/refCnt/needFsck.dup ($?)\n");
-    }
+    my $deltaInfo = BackupPC::XS::DeltaRefCnt::new($DestDir);
 
     print("Copying v3 backup #$lastNum to v4 #$newNum\n") if ( $LogLevel >= 1 );
     foreach my $shareName ( $view->shareList($lastNum) ) {
         my $ac = BackupPC::XS::AttribCache::new($Host, $newNum, $shareName, $Compress);
+        $ac->setDeltaInfo($deltaInfo);
         $bpc->flushXSLibMesgs();
-        if ( $view->find($lastNum, $shareName, "/", 0, \&copy_v3_file, $ac) ) {
+        if ( $view->find($lastNum, $shareName, "/", 0, \&copy_v3_file, $ac, $deltaInfo) ) {
             print(STDERR "BackupPC_backupDuplicate: bad share '$shareName'\n");
             $ErrorCnt++;
             next;
@@ -201,17 +193,26 @@ if ( $Backups[$lastIdx]{version} >= 4 ) {
         $ac->flush(1);
     }
     $Backups[$newIdx]{inodeLast} = $Inode + 1;
+    $deltaInfo->flush();
+    printProgress();
 }
+
+#
+# merge in backups (in case it changed)
+#
+my @newBackups = $bpc->BackupInfoRead($Host);
+%{$newBackups[scalar(@newBackups)]} = %{$Backups[$newIdx]};
+@Backups = @newBackups;
 $bpc->BackupInfoWrite($Host, @Backups);
 BackupPC::Storage->backupInfoWrite("$TopDir/pc/$Host",
                                     $Backups[$newIdx]{num}, $Backups[$newIdx], 1);
-printProgress();
-BackupPC::XS::PoolRefCnt::DeltaPrint() if ( $LogLevel >= 6 );
-BackupPC::XS::PoolRefCnt::DeltaFileFlush();
 $ErrorCnt += BackupPC::XS::Lib::logErrorCntGet();
 $bpc->flushXSLibMesgs();
-unlink("$TopDir/pc/$Host/refCnt/needFsck.dup") if ( $ErrorCnt == 0 );
+unlink("$DestDir/refCnt/needFsck.dup") if ( $ErrorCnt == 0 );
+my $optsp = " -p" if ( $opts{p} );
+$ErrorCnt++ if ( system("$BinDir/BackupPC_refCountUpdate -h $Host -o 0$optsp") != 0 );
 print("BackupPC_backupDuplicate: got $ErrorCnt errors and $FileErrorCnt file open errors\n");
+print("__bpc_pidEnd__ $$\n") if ( !$opts{p} );
 exit($ErrorCnt ? 1 : 0);
 
 sub copy_v4_file
@@ -221,41 +222,24 @@ sub copy_v4_file
     printf("Got path = %s, name = %s, e,d,f = %d,%d,%d\n", $path, $name, -e $path, -d $path, -f $path)
                                         if ( $LogLevel >= 5 );
     if ( -d $path ) {
-        print("Creating directory $DestDir/$path\n") if ( $LogLevel >= 3 );
+        print("Creating directory $DestDir/$path\n") if ( $LogLevel >= 4 );
         eval { mkpath("$DestDir/$path", 0, 0777) };
         if ( $@ ) {
-            print(STDERR "Can't mkpath $DestDir/$path\n");
+            print(STDERR "Can't mkpath $DestDir/$path ($@)\n");
             $ErrorCnt++;
         }
+        #
+        # this is actually the directory count; it's expensive to get the file count since
+        # we'd have to open every attrib file
+        #
+        $FileCnt++;
         return;
-    }
-    if ( -f $path && $path =~ m{(.*)/(attrib.*)$} ) {
-        my $d    = $1;
-        my $file = $2;
-        $d = "." if ( $d eq "" );
-        my $attr = BackupPC::XS::Attrib::new($Compress);
-        if ( !$attr->read($d, $file) ) {
-            print(STDERR "Can't read attribute file in $d: " . $attr->errStr() . "\n");
-            $FileErrorCnt++;
-        } else {
-            my $attrAll = $attr->get();
-            my $d = $attr->digest();
-            my $doFileCnt = $file eq "attrib" ? 1 : 0;   # don't count progress on inodes
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($Compress, $d, 1) if ( length($d) );
-            $bpc->flushXSLibMesgs();
-            foreach my $fileUM ( keys(%$attrAll) ) {
-                my $a = $attrAll->{$fileUM};
-                $FileCnt++ if ( $doFileCnt && $a->{type} != BPC_FTYPE_DIR );
-                BackupPC::XS::PoolRefCnt::DeltaUpdate($Compress, $a->{digest}, 1) if ( length($a->{digest}) );
-            }
-            $bpc->flushXSLibMesgs();
-        }
     }
     if ( !copy($path, "$DestDir/$path") ) {
         print(STDERR "Can't copy $path to $DestDir/$path\n");
         $ErrorCnt++;
     }
-    printProgress() if ( $FileCnt >= $FileCntNext );
+    printProgress(1) if ( $FileCnt >= $FileCntNext );
 }
 
 #
@@ -278,18 +262,22 @@ sub readFile
 
 sub copy_v3_file
 {
-    my($a, $ac) = @_;
+    my($a, $ac, $deltaInfo) = @_;
     my $fileName = $a->{relPath};
     my $copyFile = 0;
 
-    print("copy_v3_file: $a->{relPath}\n") if ( $LogLevel >= 6 );
+    print("copy_v3_file: $a->{relPath}\n") if ( $LogLevel >= 5 );
 
     if ( $a->{type} == BPC_FTYPE_DIR ) {
-        eval { mkpath($a->{fullPath}, 0, 0777) };
-        if ( $@ ) {
-            print("Can't create $a->{fullPath}\n");
-            $ErrorCnt++;
-            return -1;
+        my $path = $ac->getFullMangledPath($a->{relPath});
+        if ( !-d $path ) {
+            eval { mkpath($path, 0, 0777) };
+            if ( $@ ) {
+                print("Can't mkpath $path ($@)\n");
+                $ErrorCnt++;
+                return -1;
+            }
+            print("copy_v3_file: mkpath $path\n") if ( $LogLevel >= 4 );
         }
     } else {
         printProgress() if ( ++$FileCnt >= $FileCntNext );
@@ -366,19 +354,25 @@ sub copy_v3_file
 
     if ( $copyFile ) {
         my $f = BackupPC::XS::FileZIO::open($a->{fullPath}, 0, $Compress);
-        my($size, $data, $data1MB, $fileSize, $found, @s);
+        my($size, $data, $data1MB, $fileSize, $found, @s, $thisRead);
         if ( !defined($f) ) {
             print(STDERR "Unable to open file $a->{fullPath}\n");
             $FileErrorCnt++;
             return;
         }
         my $md5 = Digest::MD5->new();
-        $fileSize = $f->read(\$data1MB, 1 << 20);
-        $md5->add($data1MB);
-        while ( $f->read(\$data, 1 << 20) > 0 ) {
-            $md5->add($data);
-            $fileSize += length($data);
-        }
+        do {
+            $thisRead = $f->read(\$data, 1 << 20);
+            if ( $thisRead < 0 ) {
+                print(STDERR "error reading file $a->{fullPath} (read returns $thisRead)\n");
+                $ErrorCnt++;
+                $f->close();
+                return;
+            } elsif ( $thisRead > 0 ) {
+                $md5->add($data);
+                $fileSize += length($data);
+            }
+        } while ( $thisRead > 0 );
         my $inode = (stat($a->{fullPath}))[1];
         my $digest4 = $md5->digest();
         my $digest3 = $bpc->Buffer2MD5_v3(Digest::MD5->new(), $fileSize, \$data1MB);
@@ -394,12 +388,10 @@ sub copy_v3_file
         if ( $fileSize == 0 ) {
             $found = 1;
             print("$a->{relPath}: empty file in pool by default\n") if ( $LogLevel >= 4 );
-        } elsif ( (@s = stat($path4)) ) {
-            if ( $s[1] == $inode ) {
-                $found = 1;
-                print("$a->{relPath}: already in pool4 $path4\n") if ( $LogLevel >= 4 );
-            }
-        } else {
+        } elsif ( (@s = stat($path4)) && $s[1] == $inode ) {
+            $found = 1;
+            print("$a->{relPath}: already in pool4 $path4\n") if ( $LogLevel >= 4 );
+        } elsif ( !-f $path4 ) {
             #
             # look in v3 pool for match
             #
@@ -423,7 +415,7 @@ sub copy_v3_file
                     print("Creating directory $dir4\n") if ( $LogLevel >= 5 );
                     eval { mkpath($dir4, 0, 0777) };
                     if ( $@ ) {
-                        print(STDERR "Can't mkpath $dir4\n");
+                        print(STDERR "Can't mkpath $dir4 ($@)\n");
                         $ErrorCnt++;
                         $found = 0;
                     }
@@ -453,7 +445,7 @@ sub copy_v3_file
         if ( $found ) {
             $f->close();
             $a->{digest} = $digest4;
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($Compress, $digest4, 1) if ( length($digest4) );
+            $deltaInfo->update($Compress, $digest4, 1) if ( length($digest4) );
             $Backups[$newIdx]{nFiles}++;
             $Backups[$newIdx]{nFilesExist}++;
             if ( $a->{type} == BPC_FTYPE_FILE || $a->{type} == BPC_FTYPE_SYMLINK ) {
@@ -461,7 +453,7 @@ sub copy_v3_file
                 $Backups[$newIdx]{sizeExist}     += $fileSize;
                 $Backups[$newIdx]{sizeExistComp} += $s[7];
             }
-        } elsif ( 0 ) {
+        } else {
             #
             # fall back on copying it to the new pool
             #
@@ -475,11 +467,11 @@ sub copy_v3_file
             my($match, $digest, $poolSize, $errorCnt) = $pw->close();
             if ( $LogLevel >= 5 ) {
                 my $digestStr = unpack("H*", $digest);
-                print("poolWrite->close $fileName returned match $match, digest $digestStr, poolSize $poolSize, errCnt $errorCnt\n");
+                print("poolWrite->close $fileName: returned match $match, digest $digestStr, poolSize $poolSize, errCnt $errorCnt\n");
             }
             $ErrorCnt += $errorCnt;
             $a->{digest} = $digest;
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($Compress, $digest, 1) if ( length($digest) );
+            $deltaInfo->update($Compress, $digest, 1) if ( length($digest) );
             $bpc->flushXSLibMesgs();
             $Backups[$newIdx]{nFiles}++;
             if ( $match ) {
@@ -502,14 +494,34 @@ sub copy_v3_file
         $Backups[$newIdx]{nFiles}++;
         $Backups[$newIdx]{nFilesExist}++;
     }
-    print("setting $a->{relPath} (inode $a->{inode}, nlinks $a->{nlinks})\n") if ( $LogLevel >= 5 );
+    print("setting $a->{relPath} attrib (type $a->{type}, inode $a->{inode}, nlinks $a->{nlinks})\n") if ( $LogLevel >= 5 );
     $ac->set($a->{relPath}, $a);
     $bpc->flushXSLibMesgs();
 }
 
+#
+# Create a needFsck file, so if we are killed and can't recover, we can
+# make sure an fsck is run next time.
+#
+sub createFsckFile
+{
+    my($destDir) = @_;
+    mkpath("$destDir/refCnt", 0, 0777);
+    my $needFsckFH;
+    if ( !(open($needFsckFH, ">", "$destDir/refCnt/needFsck.dup") && close($needFsckFH)) ) {
+        print("BackupPC_backupDuplicate: can't create $destDir/refCnt/needFsck.dup ($?)\n");
+    }
+}
+
 sub printProgress
 {
+    my($dirCnt) = @_;
+
     $FileCntNext = $FileCnt + 100;
     return if ( $opts{p} );
-    print("__bpc_progress_fileCnt__ $FileCnt\n");
+    if ( $dirCnt ) {
+        print("__bpc_progress_fileCnt__ $FileCnt dirs\n");
+    } else {
+        print("__bpc_progress_fileCnt__ $FileCnt\n");
+    }
 }

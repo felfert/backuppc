@@ -19,7 +19,7 @@
 #   Craig Barratt <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2001-2013  Craig Barratt
+#   Copyright (C) 2001-2017  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -44,36 +44,51 @@
 
 use strict;
 no  utf8;
-use vars qw(%Conf %OrigConf);
+use vars qw(%Conf %OrigConf $Upgrade);
 use lib "./lib";
-use Encode;
 
-my $EncodeVersion = eval($Encode::VERSION);
-if ( $EncodeVersion < 1.99 ) {
-    print("Error: you need to upgrade perl's Encode package.\n"
-        . "I found $EncodeVersion and BackupPC needs >= 1.99\n"
-        . "Please go to www.cpan.org or use the cpan command.\n");
-    exit(1);
+#
+# The two strings below are replaced with the full list of BackupPC executables
+# and libraries by makeDist.
+#
+my @ConfigureBinList = qw(
+        __CONFIGURE_BIN_LIST__
+    );
+my @ConfigureLibList = qw(
+        __CONFIGURE_LIB_LIST__
+    );
+
+#
+# Check that makeDist has been run; need to avoid having the magic string
+# appear exactly (otherwise makeDist will replace it), so compute it instead
+#
+if ( $ConfigureBinList[0] eq "__" . "CONFIGURE_BIN_LIST__" ) {
+    die <<EOF;
+You need to run makeDist first to create a tarball release that includes an
+updated configure.pl.  After you unpack the tarball, run configure.pl from
+there.
+EOF
 }
 
-my @Packages = qw(File::Path File::Spec File::Copy DirHandle Digest::MD5
-                  Data::Dumper Getopt::Std Getopt::Long Pod::Usage
-                  BackupPC::Lib BackupPC::XS);
+my @Packages = qw(version Encode Socket File::Path File::Spec File::Copy
+                  Digest::MD5 Data::Dumper Getopt::Std Getopt::Long Pod::Usage
+                  File::Listing CGI BackupPC::XS BackupPC::Lib);
 
 my $PackageVersion = {
-        "BackupPC::XS" => "0.30",
+        "Encode"       => "1.99",
+        "BackupPC::XS" => "0.53",
     };
 
 foreach my $pkg ( @Packages ) {
     eval "use $pkg";
     if ( !$@ ) {
         next if ( !defined($PackageVersion->{$pkg}) );
-        my $version = eval "\$${pkg}::VERSION";
-        next if ( $version >= $PackageVersion->{$pkg} );
+        my $ver = eval "\$${pkg}::VERSION";
+        next if ( version->parse($ver) >= version->parse($PackageVersion->{$pkg}) );
         die <<EOF;
 
-Package $pkg needs to be at least version $PackageVersion->{$pkg}.
-The currently installed $pkg is version $version.
+Perl package $pkg needs to be at least version $PackageVersion->{$pkg}.
+The currently installed $pkg is version $ver.
 
 Please upgrade package $pkg to the latest version and then re-run
 this script.
@@ -96,8 +111,8 @@ EOF
     }
     die <<EOF;
 
-BackupPC needs the package $pkg.  Please install $pkg
-before installing BackupPC.
+BackupPC needs the perl package "$pkg".  Please install "$pkg"
+(eg, using cpan) before installing BackupPC.
 
 EOF
 }
@@ -114,6 +129,7 @@ if ( !GetOptions(
             "config-path=s",
             "config-override=s%",
             "config-dir=s",
+            "config-only",
             "data-dir=s",
             "dest-dir=s",
             "fhs!",
@@ -174,16 +190,17 @@ EOF
 # Check if this is an upgrade, in which case read the existing
 # config file to get all the defaults.
 #
+my $ConfigDir = $opts{"config-dir"} || "/etc/BackupPC";
 my $ConfigPath = "";
 my $ConfigFileOK = 1;
 while ( 1 ) {
-    if ( $ConfigFileOK && -f "/etc/BackupPC/config.pl"
+    if ( $ConfigFileOK && -f "$DestDir$ConfigDir/config.pl"
             && (!defined($opts{fhs}) || $opts{fhs}) && !defined($opts{"config-path"}) ) {
-        $ConfigPath = "/etc/BackupPC/config.pl";
+        $ConfigPath = "$ConfigDir/config.pl";
         $opts{fhs} = 1 if ( !defined($opts{fhs}) );
         print <<EOF;
 
-Found /etc/BackupPC/config.pl, so this is an upgrade of an
+Found $DestDir$ConfigDir/config.pl, so this is an upgrade of an
 existing BackupPC installation.  We will verify some existing
 information, but you will probably not need to make any
 changes - just hit ENTER to each question.
@@ -193,7 +210,7 @@ EOF
 
 Is this a new installation or upgrade for BackupPC?  If this is
 an upgrade please tell me the full path of the existing BackupPC
-configuration file (eg: /etc/BackupPC/config.pl).  Otherwise, just
+configuration file (eg: $ConfigDir/config.pl).  Otherwise, just
 hit return.
 
 EOF
@@ -202,13 +219,13 @@ EOF
                              "config-path");
     }
     last if ( $ConfigPath eq ""
-            || ($ConfigPath =~ /^\// && -f $ConfigPath && -w $ConfigPath) );
+            || ($ConfigPath =~ /^\// && -f "$DestDir$ConfigPath" && -w "$DestDir$ConfigPath") );
     my $problem = "is not an absolute path";
     $problem = "is not writable"        if ( !-w $ConfigPath );
     $problem = "is not readable"        if ( !-r $ConfigPath );
     $problem = "is not a regular file"  if ( !-f $ConfigPath );
     $problem = "doesn't exist"          if ( !-e $ConfigPath );
-    print("The file '$ConfigPath' $problem.\n");
+    print("The file '$DestDir$ConfigPath' $problem.\n");
     if ( $opts{batch} ) {
         print("Need to specify a valid --config-path for upgrade\n");
         exit(1);
@@ -216,15 +233,27 @@ EOF
     $ConfigFileOK = 0;
 }
 $opts{fhs} = 1 if ( !defined($opts{fhs}) && $ConfigPath eq "" );
-$opts{fhs} = 0 if ( !defined($opts{fhs}) );
 
 my $bpc;
-if ( $ConfigPath ne "" && -r $ConfigPath ) {
-    (my $confDir = $ConfigPath) =~ s{/[^/]+$}{};
+if ( $ConfigPath ne "" && -r "$DestDir$ConfigPath" ) {
+    ($ConfigDir = $ConfigPath) =~ s{/[^/]+$}{};
+
+    # In config-only mode use installed BackupPC if distribution files are not available.
+    my $libPath = ($opts{"config-only"} && ($INC{"BackupPC/Lib.pm"} ne "lib/BackupPC/Lib.pm"))
+                        ? "" : ".";
+
     die("BackupPC::Lib->new failed\n")
-            if ( !($bpc = BackupPC::Lib->new(".", ".", $confDir, 1)) );
+            if ( !($bpc = BackupPC::Lib->new(".", $libPath, "$DestDir$ConfigDir", 1)) );
     %Conf = $bpc->Conf();
     %OrigConf = %Conf;
+    $Upgrade = 1;
+    if ( !defined($opts{fhs}) ) {
+        if ( $ConfigPath eq "$Conf{TopDir}/conf/config.pl" ) {
+            $opts{fhs} = 0;
+        } else {
+            $opts{fhs} = 1;
+        }
+    }
     if ( !$opts{fhs} ) {
         ($Conf{TopDir} = $ConfigPath) =~ s{/[^/]+/[^/]+$}{}
                     if ( $Conf{TopDir} eq '' );
@@ -233,30 +262,28 @@ if ( $ConfigPath ne "" && -r $ConfigPath ) {
         $bpc->{RunDir} = $Conf{RunDir}  = "$Conf{TopDir}/log"
                     if ( $Conf{RunDir} eq '' );
     }
-    $bpc->{ConfDir} = $Conf{ConfDir} = $confDir;
-    my $err = $bpc->ServerConnect($Conf{ServerHost}, $Conf{ServerPort}, 1);
-    if ( $err eq "" ) {
-        print <<EOF;
+    $bpc->{ConfDir} = $Conf{ConfDir} = $ConfigDir;
+    if ( !length($DestDir) ) {
+        my $err = $bpc->ServerConnect($Conf{ServerHost}, $Conf{ServerPort}, 1);
+        if ( $err eq "" ) {
+            print <<EOF;
 
-BackupPC is running on $Conf{ServerHost}.  You need to stop BackupPC
-before you can upgrade the code.  Depending upon your installation,
-you could run "/etc/init.d/backuppc stop".
+BackupPC is running on $Conf{ServerHost}.  You need to stop BackupPC before
+you can upgrade the code.  Depending upon your installation, you could
+run "systemctl stop backuppc.service" if you use systemd,
+or "/etc/init.d/backuppc stop" if you use init.d.
 
 EOF
-        exit(1);
+            exit(1);
+        }
     }
 }
 
 #
-# Create defaults for FHS setup
+# Create filesystem hierarchy defaults
 #
-if ( $opts{fhs} ) {
-    $Conf{TopDir}       ||= $opts{"data-dir"}    || "/data/BackupPC";
-    $Conf{InstallDir}   ||= $opts{"install-dir"} || "/usr/local/BackupPC";
-} else {
-    $Conf{TopDir}       ||= $opts{"data-dir"}    || "/data/BackupPC";
-    $Conf{InstallDir}   ||= $opts{"install-dir"} || "/usr/local/BackupPC";
-}
+$Conf{TopDir}       ||= $opts{"data-dir"}    || "/data/BackupPC";
+$Conf{InstallDir}   ||= $opts{"install-dir"} || "/usr/local/BackupPC";
 
 #
 # These are the programs whose paths we need to find
@@ -269,7 +296,7 @@ my %Programs = (
     nmblookup      => "NmbLookupPath",
     rsync          => "RsyncClientPath",
     ping           => "PingPath",
-    'ping6/ping'   => "PingPath6",
+    ping6          => "Ping6Path",
     df             => "DfPath",
     'ssh/ssh2'     => "SshPath",
     sendmail       => "SendmailPath",
@@ -285,7 +312,7 @@ my %Programs = (
 foreach my $prog ( sort(keys(%Programs)) ) {
     my $path;
     foreach my $subProg ( split(/\//, $prog) ) {
-        $path = FindProgram("$ENV{PATH}:/usr/bin:/bin:/sbin:/usr/sbin",
+        $path = FindProgram("$ENV{PATH}:/usr/bin:/bin:/sbin:/usr/sbin:/usr/local/bin",
                             $subProg) if ( !length($path) );
     }
     $Conf{$Programs{$prog}} = $path if ( !length($Conf{$Programs{$prog}}) );
@@ -404,11 +431,11 @@ while ( 1 ) {
 }
 
 if ( $opts{fhs} ) {
-    $Conf{ConfDir}      ||= $opts{"config-dir"}  || "/etc/BackupPC";
+    $Conf{ConfDir}      ||= $ConfigDir           || "/etc/BackupPC";
     $Conf{LogDir}       ||= $opts{"log-dir"}     || "/var/log/BackupPC";
     $Conf{RunDir}       ||= $opts{"run-dir"}     || "/var/run/BackupPC";
 } else {
-    $Conf{ConfDir}      ||= $opts{"config-dir"}  || "$Conf{TopDir}/conf";
+    $Conf{ConfDir}      ||= $ConfigDir           || "$Conf{TopDir}/conf";
     $Conf{LogDir}       ||= $opts{"log-dir"}     || "$Conf{TopDir}/log";
     $Conf{RunDir}       ||= $opts{"run-dir"}     || "$Conf{TopDir}/log";
 }
@@ -453,8 +480,6 @@ if ( $Conf{SCGIServerPort} < 0 ) {
             exit(1);
         }
     }
-} else {
-    $Conf{CgiDir} = "";
 }
 
 if ( $Conf{SCGIServerPort} > 0 || $Conf{CgiDir} ne "" ) {
@@ -497,165 +522,30 @@ print <<EOF;
 
 Ok, we're about to:
 
-  - install the binaries, lib and docs in $Conf{InstallDir},
-  - create the data directory $Conf{TopDir},
-  - create/update the config.pl file $Conf{ConfDir}/config.pl,
-  - optionally install the cgi-bin interface.
+EOF
+
+print <<EOF if ( !$opts{"config-only"} );
+  - install the binaries, lib and docs in $DestDir$Conf{InstallDir}
+  - create the data directory $DestDir$Conf{TopDir}
+  - optionally install the cgi-bin interface
+EOF
+
+print <<EOF;
+  - create/update the config.pl file $DestDir$Conf{ConfDir}/config.pl
 
 EOF
 
 exit unless prompt("--> Do you want to continue?", "y") =~ /y/i;
 
-#
-# Create install directories
-#
-foreach my $dir ( qw(bin share/doc/BackupPC
-		     lib/BackupPC/CGI
-		     lib/BackupPC/Config
-		     lib/BackupPC/Lang
-		     lib/BackupPC/Storage
-		     lib/BackupPC/Xfer
-		     lib/BackupPC/Zip
-                     lib/Net/FTP
-		 ) ) {
-    next if ( -d "$DestDir$Conf{InstallDir}/$dir" );
-    mkpath("$DestDir$Conf{InstallDir}/$dir", 0, 0755);
-    if ( !-d "$DestDir$Conf{InstallDir}/$dir"
-            || !my_chown($Uid, $Gid, "$DestDir$Conf{InstallDir}/$dir") ) {
-        die("Failed to create or chown $DestDir$Conf{InstallDir}/$dir\n");
-    } else {
-        print("Created $DestDir$Conf{InstallDir}/$dir\n");
-    }
-}
+CleanPidSock();
 
-#
-# Create CGI image directory
-#
-foreach my $dir ( ($Conf{CgiImageDir}) ) {
-    next if ( $dir eq "" || -d "$DestDir$dir" );
-    mkpath("$DestDir$dir", 0, 0755);
-    if ( !-d "$DestDir$dir" || !my_chown($Uid, $Gid, "$DestDir$dir") ) {
-        die("Failed to create or chown $DestDir$dir");
-    } else {
-        print("Created $DestDir$dir\n");
-    }
-}
+DoInstall() if ( !$opts{"config-only"} );
 
-#
-# Create other directories
-#
-foreach my $dir ( (
-            "$Conf{TopDir}",
-            "$Conf{TopDir}/pool",
-            "$Conf{TopDir}/cpool",
-            "$Conf{TopDir}/pc",
-            "$Conf{ConfDir}",
-            "$Conf{LogDir}",
-            "$Conf{RunDir}",
-        ) ) {
-    mkpath("$DestDir$dir", 0, 0750) if ( !-d "$DestDir$dir" );
-    if ( !-d "$DestDir$dir"
-            || !my_chown($Uid, $Gid, "$DestDir$dir") ) {
-        die("Failed to create or chown $DestDir$dir\n");
-    } else {
-        print("Created $DestDir$dir\n");
-    }
-}
-
-printf("Installing binaries in $DestDir$Conf{InstallDir}/bin\n");
-foreach my $prog ( qw(
-        __CONFIGURE_BIN_LIST__
-    ) ) {
-    InstallFile($prog, "$DestDir$Conf{InstallDir}/$prog", 0555);
-}
-
-#
-# remove old pre-v4 programs
-#
-foreach my $prog ( qw(
-        bin/BackupPC_link
-        bin/BackupPC_tarPCCopy
-        bin/BackupPC_trashClean
-        bin/BackupPC_compressPool
-    ) ) {
-    unlink("$DestDir$Conf{InstallDir}/$prog");
-}
-
-printf("Installing library in $DestDir$Conf{InstallDir}/lib\n");
-foreach my $lib ( qw(
-        __CONFIGURE_LIB_LIST__
-    ) ) {
-    InstallFile($lib, "$DestDir$Conf{InstallDir}/$lib", 0444);
-}
-
-#
-# remove old pre-v4 libraries
-#
-foreach my $lib ( qw(
-        lib/BackupPC/Attrib.pm
-        lib/BackupPC/Config.pm
-        lib/BackupPC/FileZIO.pm
-        lib/BackupPC/PoolWrite.pm
-        lib/BackupPC/Xfer/RsyncDigest.pm
-        lib/BackupPC/Xfer/RsyncFileIO.pm
-    ) ) {
-    unlink("$DestDir$Conf{InstallDir}/$lib");
-}
-
-#
-# clean pid and sock files from old location (they are now in $Conf{RunDir}, and they
-# get re-created each time BackupPC starts, so it's ok if RunDir eq LogDir).
-#
-unlink("$DestDir$Conf{LogDir}/BackupPC.pid")  if ( -f "$DestDir$Conf{LogDir}/BackupPC.pid" );
-unlink("$DestDir$Conf{LogDir}/BackupPC.sock") if ( -e "$DestDir$Conf{LogDir}/BackupPC.sock" );
-
-if ( $Conf{CgiImageDir} ne "" ) {
-    printf("Installing images in $DestDir$Conf{CgiImageDir}\n");
-    foreach my $img ( <images/*> ) {
-	(my $destImg = $img) =~ s{^images/}{};
-	InstallFile($img, "$DestDir$Conf{CgiImageDir}/$destImg", 0444, 1);
-    }
-
-    #
-    # Install new CSS file, making a backup copy if necessary
-    #
-    my $cssBackup = "$DestDir$Conf{CgiImageDir}/BackupPC_stnd.css.pre-__VERSION__";
-    if ( -f "$DestDir$Conf{CgiImageDir}/BackupPC_stnd.css" && !-f $cssBackup ) {
-	rename("$DestDir$Conf{CgiImageDir}/BackupPC_stnd.css", $cssBackup);
-    }
-    InstallFile("conf/BackupPC_stnd.css",
-	        "$DestDir$Conf{CgiImageDir}/BackupPC_stnd.css", 0444, 0);
-    InstallFile("conf/BackupPC_stnd_orig.css",
-	        "$DestDir$Conf{CgiImageDir}/BackupPC_stnd_orig.css", 0444, 0);
-    InstallFile("conf/sorttable.js",
-                "$DestDir$Conf{CgiImageDir}/sorttable.js", 0444, 0);
-}
-
-printf("Making init.d scripts\n");
-foreach my $init ( qw(gentoo-backuppc gentoo-backuppc.conf linux-backuppc
-		      solaris-backuppc debian-backuppc freebsd-backuppc
-                      freebsd-backuppc2 suse-backuppc slackware-backuppc ) ) {
-    InstallFile("init.d/src/$init", "init.d/$init", 0444);
-}
-
-printf("Making Apache configuration file for suid-perl\n");
-InstallFile("httpd/src/BackupPC.conf", "httpd/BackupPC.conf", 0644);
-
-printf("Installing docs in $DestDir$Conf{InstallDir}/share/doc/BackupPC\n");
-foreach my $doc ( qw(BackupPC.pod BackupPC.html) ) {
-    InstallFile("doc/$doc", "$DestDir$Conf{InstallDir}/share/doc/BackupPC/$doc", 0444);
-    #
-    # clean up files from old directory
-    #
-    unlink("$DestDir$Conf{InstallDir}/doc/$doc") if ( -f "$DestDir$Conf{InstallDir}/doc/$doc" );
-}
-#
-# clean up old directory (ok if it quietly fails if there are other files in that directory)
-#
-rmdir("$DestDir$Conf{InstallDir}/doc") if ( -d "$DestDir$Conf{InstallDir}/doc" );
-
-printf("Installing config.pl and hosts in $DestDir$Conf{ConfDir}\n");
-InstallFile("conf/hosts", "$DestDir$Conf{ConfDir}/hosts", 0644)
+print("Installing config.pl and hosts in $DestDir$Conf{ConfDir}\n");
+InstallFile("conf/hosts", "$DestDir$Conf{ConfDir}/hosts.sample", 0644)
+                    if ( !$opts{"config-only"} );
+my $hostsSample = $opts{"config-only"} ? "$DestDir$Conf{ConfDir}/hosts.sample" : "conf/hosts";
+InstallFile($hostsSample, "$DestDir$Conf{ConfDir}/hosts", 0644)
                     if ( !-f "$DestDir$Conf{ConfDir}/hosts" );
 
 #
@@ -664,7 +554,8 @@ InstallFile("conf/hosts", "$DestDir$Conf{ConfDir}/hosts", 0644)
 # parameters and deleting ones that are no longer needed.
 #
 my $dest = "$DestDir$Conf{ConfDir}/config.pl";
-my ($distConf, $distVars) = ConfigParse("conf/config.pl");
+my $configSample = $opts{"config-only"} ? "$DestDir$Conf{ConfDir}/config.pl.sample" : "conf/config.pl";
+my ($distConf, $distVars) = ConfigParse($configSample);
 my ($oldConf, $oldVars);
 my ($newConf, $newVars) = ($distConf, $distVars);
 if ( -f $dest ) {
@@ -682,11 +573,11 @@ $Conf{EMailAdminUserName} ||= $Conf{BackupPCUser};
 #
 # Guess $Conf{CgiURL}
 #
-if ( !defined($Conf{CgiURL}) ) {
+if ( $Conf{CgiURL} eq '' ) {
     if ( $Conf{CgiDir} =~ m{cgi-bin(/.*)} ) {
-	$Conf{CgiURL} = "'http://$Conf{ServerHost}/cgi-bin$1/BackupPC_Admin'";
+        $Conf{CgiURL} = "http://$Conf{ServerHost}/cgi-bin$1/BackupPC_Admin";
     } else {
-	$Conf{CgiURL} = "'http://$Conf{ServerHost}/cgi-bin/BackupPC_Admin'";
+        $Conf{CgiURL} = "http://$Conf{ServerHost}/cgi-bin/BackupPC_Admin";
     }
 }
 
@@ -753,7 +644,8 @@ $Conf{ParPath} = '' if ( $Conf{ParPath} ne '' && !-x $Conf{ParPath} );
 #
 if ( defined($Conf{PingArgs}) ) {
     $Conf{PingCmd} = '$pingPath ' . $Conf{PingArgs};
-} elsif ( !defined($Conf{PingCmd}) ) {
+    delete($Conf{PingArgs});
+} elsif ( $Upgrade && !defined($Conf{PingCmd}) ) {
     if ( $^O eq "solaris" || $^O eq "sunos" ) {
 	$Conf{PingCmd} = '$pingPath -s $host 56 1';
     } elsif ( ($^O eq "linux" || $^O eq "openbsd" || $^O eq "netbsd")
@@ -762,7 +654,6 @@ if ( defined($Conf{PingArgs}) ) {
     } else {
 	$Conf{PingCmd} = '$pingPath -c 1 $host';
     }
-    delete($Conf{PingArgs});
 }
 
 #
@@ -814,31 +705,43 @@ if ( defined($Conf{CgiUserConfigEdit}) ) {
     my $d = Data::Dumper->new([$new], [*value]);
     $d->Indent(1);
     $d->Terse(1);
+    $d->Sortkeys(1);
     my $value = $d->Dump;
     $value =~ s/(.*)\n/$1;\n/s;
     $newConf->[$newVars->{CgiUserConfigEdit}]{text}
-            =~ s/(\s*\$Conf\{.*?\}\s*=\s*).*/$1$value/s;
+            =~ s/^(\s*\$Conf\{.*?\}\s*=\s*).*/$1$value/ms;
 }
-
-#
-# If it exists, use $Conf{RsyncClientCmd} to create the default $Conf{RsyncSshArgs}.
-#
-if ( $Conf{RsyncClientCmd} =~ /(\$sshPath.* +-l +\S+)/ && defined($newVars->{RsyncSshArgs}) ) {
-    my $value = "[\n    '-e', '$1',\n];\n\n";
-    $newConf->[$newVars->{RsyncSshArgs}]{text}
-            =~ s/(\s*\$Conf\{RsyncSshArgs}\s*=\s*).*/$1$value/s;
-}
-
-#
-# Overwrite $Conf{RsyncArgs} and $Conf{RsyncRestoreArgs}.
-#
-$newConf->[$newVars->{RsyncArgs}]{text}        = $distConf->[$distVars->{RsyncArgs}]{text};
-$newConf->[$newVars->{RsyncRestoreArgs}]{text} = $distConf->[$distVars->{RsyncRestoreArgs}]{text};
 
 #
 # If this is an upgrade from V3, then set $Conf{PoolV3Enabled}
+# and update $Conf{RsyncArgs} and $Conf{RsyncRestoreArgs}.
 #
-$Conf{PoolV3Enabled} = 1 if ( defined($Conf{ServerHost}) && !defined($Conf{PoolV3Enabled}) );
+if ( $Upgrade && !defined($Conf{PoolV3Enabled}) ) {
+    $Conf{PoolV3Enabled} = 1;
+    #
+    # for an upgrade, remove the new --one-file-system flag if it wasn't there before
+    #
+    if ( $oldConf->[$oldVars->{RsyncArgs}]{text} !~ /--one-file-system/ ) {
+        $distConf->[$distVars->{RsyncArgs}]{text} =~ s/\n\s*'--one-file-system',\n/\n/;
+    }
+    $newConf->[$newVars->{RsyncArgs}]{text}        = $distConf->[$distVars->{RsyncArgs}]{text};
+    $newConf->[$newVars->{RsyncRestoreArgs}]{text} = $distConf->[$distVars->{RsyncRestoreArgs}]{text};
+    #
+    # If it exists, use $Conf{RsyncClientCmd} to create the default $Conf{RsyncSshArgs}.
+    #
+    if ( $Conf{RsyncClientCmd} =~ /(\$sshPath.* +-l +\S+)/ && defined($newVars->{RsyncSshArgs}) ) {
+        my $value = "[\n    '-e', '$1',\n];\n\n";
+        $newConf->[$newVars->{RsyncSshArgs}]{text}
+                =~ s/^(\s*\$Conf\{RsyncSshArgs}\s*=\s*).*/$1$value/ms;
+    }
+}
+
+#
+# Update $Conf{CgiNavBarLinks} with github URLs
+#
+$newConf->[$newVars->{CgiNavBarLinks}]{text} =~ s{http://backuppc.wiki.sourceforge.net}{https://github.com/backuppc/backuppc/wiki}g;
+$newConf->[$newVars->{CgiNavBarLinks}]{text} =~ s{http://backuppc.sourceforge.net}{https://backuppc.github.io/backuppc}g;
+$newConf->[$newVars->{CgiNavBarLinks}]{text} =~ s{SourceForge}{Homepage}g;
 
 #
 # Apply any command-line configuration parameter settings
@@ -857,7 +760,7 @@ foreach my $param ( keys(%{$opts{"config-override"}}) ) {
     }
     $value .= ";\n\n";
     $newConf->[$newVars->{$param}]{text}
-            =~ s/(\s*\$Conf\{$param}\s*=\s*).*/$1$value/s;
+            =~ s/^(\s*\$Conf\{$param}\s*=\s*).*/$1$value/ms;
 }
 
 #
@@ -868,7 +771,7 @@ if ( -f $dest && !-f $confCopy ) {
     #
     # Make copy of config file, preserving ownership and modes
     #
-    printf("Making backup copy of $dest -> $confCopy\n");
+    print("Making backup copy of $dest -> $confCopy\n");
     my @stat = stat($dest);
     my $mode = $stat[2];
     my $uid  = $stat[4];
@@ -891,10 +794,21 @@ foreach my $var ( @$newConf ) {
     }
     $blockComment = $1 if ( $var->{text} =~ /^([\s\n]*#{70}.*#{70}[\s\n]+)/s );
     $var->{text} =~ s/^\s*\$Conf\{(.*?)\}(\s*=\s*['"]?)(.*?)(['"]?\s*;)/
-                defined($Conf{$1}) && ref($Conf{$1}) eq ""
-                                   && $Conf{$1} ne $OrigConf{$1}
-                                   ? "\$Conf{$1}$2$Conf{$1}$4"
-                                   : "\$Conf{$1}$2$3$4"/emg;
+                my $varName  = $1;
+                my $a        = $2;
+                my $varValue = $3;
+                my $b        = $4;
+                # Get quotes from default config to avoid missing or extra quotes
+                # when replacing misused undef or empty string values
+                ($a, $b) = GetQuotes($varName)
+                              if ( (!defined($OrigConf{$varName}) || $OrigConf{$varName} eq "")
+                                   && $Conf{$varName} ne $OrigConf{$varName} );
+
+                defined($Conf{$varName}) && ref($Conf{$varName}) eq ""
+                                   && !defined($opts{"config-override"}{$varName})
+                                   && $Conf{$varName} ne $OrigConf{$varName}
+                                   ? "\$Conf{$varName}$a$Conf{$varName}$b"
+                                   : "\$Conf{$varName}$a$varValue$b"/emg;
     print OUT $var->{text};
 }
 close(OUT);
@@ -903,12 +817,8 @@ if ( !defined($oldConf) ) {
     die("can't chown $Uid, $Gid $dest\n") unless my_chown($Uid, $Gid, $dest);
 }
 
-if ( $Conf{CgiDir} ne "" ) {
-    printf("Installing cgi script BackupPC_Admin in $DestDir$Conf{CgiDir}\n");
-    mkpath("$DestDir$Conf{CgiDir}", 0, 0755);
-    InstallFile("cgi-bin/BackupPC_Admin", "$DestDir$Conf{CgiDir}/BackupPC_Admin",
-                04554);
-}
+InstallFile($dest, "$DestDir$Conf{ConfDir}/config.pl.sample", 0644)
+            if ( !$opts{"config-only"} );
 
 print <<EOF;
 
@@ -931,11 +841,11 @@ will need to do:
     to restart Apache.  Otherwise it will have stale code.
 
   - BackupPC should be ready to start.  Don't forget to run it
-    as user $Conf{BackupPCUser}!  The installation also contains an
-    init.d/backuppc script that can be copied to /etc/init.d
-    so that BackupPC can auto-start on boot.  This will also enable
+    as user $Conf{BackupPCUser}!  The installation also contains
+    a systemd/backuppc.service script that can be installed so
+    that BackupPC can auto-start on boot.  This will also enable
     administrative users to start the server from the CGI interface.
-    See init.d/README.
+    See systemd/README.
 
 Enjoy!
 EOF
@@ -959,6 +869,179 @@ exit(0);
 ###########################################################################
 # Subroutines
 ###########################################################################
+
+sub DoInstall
+{
+    #
+    # Create install directories
+    #
+    foreach my $dir ( qw(bin
+                         share share/doc share/doc/BackupPC
+                         lib lib/BackupPC
+                         lib/BackupPC/CGI
+                         lib/BackupPC/Config
+                         lib/BackupPC/Lang
+                         lib/BackupPC/Storage
+                         lib/BackupPC/Xfer
+                         lib/BackupPC/Zip
+                         lib/Net lib/Net/FTP
+                     ) ) {
+        next if ( -d "$DestDir$Conf{InstallDir}/$dir" );
+        mkpath("$DestDir$Conf{InstallDir}/$dir", 0, 0755);
+        if ( !-d "$DestDir$Conf{InstallDir}/$dir"
+                || !my_chown($Uid, $Gid, "$DestDir$Conf{InstallDir}/$dir") ) {
+            die("Failed to create or chown $DestDir$Conf{InstallDir}/$dir\n");
+        } else {
+            print("Created $DestDir$Conf{InstallDir}/$dir\n");
+        }
+    }
+
+    #
+    # Create CGI image directory
+    #
+    foreach my $dir ( ($Conf{CgiImageDir}) ) {
+        next if ( $dir eq "" || -d "$DestDir$dir" );
+        mkpath("$DestDir$dir", 0, 0755);
+        if ( !-d "$DestDir$dir" || !my_chown($Uid, $Gid, "$DestDir$dir") ) {
+            die("Failed to create or chown $DestDir$dir");
+        } else {
+            print("Created $DestDir$dir\n");
+        }
+    }
+
+    #
+    # Create other directories
+    #
+    foreach my $dir ( (
+                "$Conf{TopDir}",
+                "$Conf{TopDir}/pool",
+                "$Conf{TopDir}/cpool",
+                "$Conf{TopDir}/pc",
+                "$Conf{ConfDir}",
+                "$Conf{LogDir}",
+                "$Conf{RunDir}",
+            ) ) {
+        eval { mkpath("$DestDir$dir", 0, 0750) } if ( !-d "$DestDir$dir" );
+        if ( $@ || !-d "$DestDir$dir"
+                || !my_chown($Uid, $Gid, "$DestDir$dir") ) {
+            if ( $dir eq $Conf{RunDir} ) {
+                print("Failed to create or chown $DestDir$dir... continuing\n");
+            } else {
+                die("Failed to create or chown $DestDir$dir\n");
+            }
+        } else {
+            print("Created $DestDir$dir\n");
+        }
+    }
+
+    print("Installing binaries in $DestDir$Conf{InstallDir}/bin\n");
+    foreach my $prog ( @ConfigureBinList ) {
+        InstallFile($prog, "$DestDir$Conf{InstallDir}/$prog", 0555);
+    }
+
+    #
+    # remove old pre-v4 programs
+    #
+    foreach my $prog ( qw(
+            bin/BackupPC_link
+            bin/BackupPC_tarPCCopy
+            bin/BackupPC_trashClean
+            bin/BackupPC_compressPool
+        ) ) {
+        unlink("$DestDir$Conf{InstallDir}/$prog");
+    }
+
+    print("Installing library in $DestDir$Conf{InstallDir}/lib\n");
+    foreach my $lib ( @ConfigureLibList ) {
+        InstallFile($lib, "$DestDir$Conf{InstallDir}/$lib", 0444);
+    }
+
+    #
+    # remove old pre-v4 libraries
+    #
+    foreach my $lib ( qw(
+            lib/BackupPC/Attrib.pm
+            lib/BackupPC/Config.pm
+            lib/BackupPC/FileZIO.pm
+            lib/BackupPC/PoolWrite.pm
+            lib/BackupPC/Xfer/RsyncDigest.pm
+            lib/BackupPC/Xfer/RsyncFileIO.pm
+        ) ) {
+        unlink("$DestDir$Conf{InstallDir}/$lib");
+    }
+
+    if ( $Conf{CgiImageDir} ne "" ) {
+        print("Installing images in $DestDir$Conf{CgiImageDir}\n");
+        foreach my $img ( <images/*> ) {
+            (my $destImg = $img) =~ s{^images/}{};
+            InstallFile($img, "$DestDir$Conf{CgiImageDir}/$destImg", 0444, 1);
+        }
+
+        #
+        # Install new CSS file, making a backup copy if necessary
+        #
+        my $cssBackup = "$DestDir$Conf{CgiImageDir}/BackupPC_stnd.css.pre-__VERSION__";
+        if ( -f "$DestDir$Conf{CgiImageDir}/BackupPC_stnd.css" && !-f $cssBackup ) {
+            rename("$DestDir$Conf{CgiImageDir}/BackupPC_stnd.css", $cssBackup);
+        }
+        InstallFile("conf/BackupPC_stnd.css",
+                    "$DestDir$Conf{CgiImageDir}/BackupPC_stnd.css", 0444, 0);
+        InstallFile("conf/BackupPC_retro_v2.css",
+                    "$DestDir$Conf{CgiImageDir}/BackupPC_retro_v2.css", 0444, 0);
+        InstallFile("conf/BackupPC_retro_v3.css",
+                    "$DestDir$Conf{CgiImageDir}/BackupPC_retro_v3.css", 0444, 0);
+        InstallFile("conf/sorttable.js",
+                    "$DestDir$Conf{CgiImageDir}/sorttable.js", 0444, 0);
+    }
+
+    print("Making systemd and init.d scripts\n");
+    foreach my $dir ( qw(systemd systemd/init.d) ) {
+        mkpath($dir, 0, 0755);
+        if ( !-d $dir || !my_chown($Uid, $Gid, $dir) ) {
+            die("Failed to create or chown $dir\n");
+        }
+    }
+    InstallFile("systemd/src/backuppc.service", "systemd/backuppc.service", 0644);
+    foreach my $init ( qw(init.d/gentoo-backuppc init.d/gentoo-backuppc.conf
+                          init.d/linux-backuppc init.d/solaris-backuppc init.d/debian-backuppc
+                          init.d/freebsd-backuppc init.d/freebsd-backuppc2 init.d/suse-backuppc
+                          init.d/slackware-backuppc init.d/ubuntu-backuppc ) ) {
+        InstallFile("systemd/src/$init", "systemd/$init", 0755);
+    }
+
+    print("Making Apache configuration file for suid-perl\n");
+    InstallFile("httpd/src/BackupPC.conf", "httpd/BackupPC.conf", 0644);
+
+    print("Installing docs in $DestDir$Conf{InstallDir}/share/doc/BackupPC\n");
+    foreach my $doc ( qw(BackupPC.pod BackupPC.html) ) {
+        InstallFile("doc/$doc", "$DestDir$Conf{InstallDir}/share/doc/BackupPC/$doc", 0444);
+        #
+        # clean up files from old directory
+        #
+        unlink("$DestDir$Conf{InstallDir}/doc/$doc") if ( -f "$DestDir$Conf{InstallDir}/doc/$doc" );
+    }
+    #
+    # clean up old directory (ok if it quietly fails if there are other files in that directory)
+    #
+    rmdir("$DestDir$Conf{InstallDir}/doc") if ( -d "$DestDir$Conf{InstallDir}/doc" );
+
+    if ( $Conf{CgiDir} ne "" ) {
+        print("Installing cgi script BackupPC_Admin in $DestDir$Conf{CgiDir}\n");
+        mkpath("$DestDir$Conf{CgiDir}", 0, 0755);
+        InstallFile("cgi-bin/BackupPC_Admin", "$DestDir$Conf{CgiDir}/BackupPC_Admin",
+                    04554);
+    }
+}
+
+sub CleanPidSock
+{
+    #
+    # clean pid and sock files from old location (they are now in $Conf{RunDir}, and they
+    # get re-created each time BackupPC starts, so it's ok if RunDir eq LogDir).
+    #
+    unlink("$DestDir$Conf{LogDir}/BackupPC.pid")  if ( -f "$DestDir$Conf{LogDir}/BackupPC.pid" );
+    unlink("$DestDir$Conf{LogDir}/BackupPC.sock") if ( -e "$DestDir$Conf{LogDir}/BackupPC.sock" );
+}
 
 sub InstallFile
 {
@@ -1124,6 +1207,15 @@ sub ConfigMerge
     return ($res, $resVars);
 }
 
+sub GetQuotes
+{
+    my($varName) = @_;
+
+    my $posn = $distVars->{$varName};
+    $distConf->[$posn]->{text} =~ /^\s*\$Conf\{.*?\}(\s*=\s*['"]?).*?(['"]?\s*;)/mg;
+    return ($1, $2);
+}
+
 sub my_chown
 {
     my($uid, $gid, $file) = @_;
@@ -1198,8 +1290,8 @@ The format is:
 
     --bin-path PROG=PATH
 
-where PROG is one of perl, tar, smbclient, nmblookup, rsync, ping,
-df, ssh, sendmail, hostname, split, par2, cat, gzip, bzip2 and
+where PROG is one of perl, tar, smbclient, nmblookup, rsync, rsync_bpc,
+ping, df, ssh, sendmail, hostname, split, par2, cat, gzip, bzip2 and
 PATH is that full path to that program.
 
 Examples
@@ -1212,9 +1304,8 @@ Set the configuration compression level to N.  Default is 3.
 
 =item B<--config-dir CONFIG_DIR>
 
-Configuration directory for new installations.  Defaults
-to /etc/BackupPC with FHS.  Automatically extracted
-from --config-path for existing installations.
+Configuration directory.  Defaults to /etc/BackupPC with FHS.
+Automatically extracted from --config-path for existing installations.
 
 =item B<--config-override name=value>
 
@@ -1224,6 +1315,25 @@ is inserted in the config.pl file (so you will need to escape quotes etc).
 For example, to override $Conf{ServerHost} you would specify:
 
     --config-override ServerHost=\"myhost\"
+
+=item B<--config-only>
+
+Do not install anything else, just create or update the config.pl and hosts
+configuration files. This option can be used for automatic update of the
+configuration after upgrading BackupPC using a package. With this option enabled
+the configure.pl can be used separately from the rest of BackupPC distribution
+files. In this case you should tell it where to look for installed BackupPC
+files.
+
+So you will need to define the PERL5LIB environmental variable, for example for
+Bourne shell:
+
+    PERL5LIB=/usr/local/lib; export PERL5LIB
+    configure.pl --config-only
+
+or specify the path via Perl -I flag:
+
+    perl -I /usr/local/lib configure.pl
 
 =item B<--config-path CONFIG_PATH>
 
@@ -1255,15 +1365,14 @@ Example:
 
 =item B<--dest-dir DEST_DIR>
 
-An optional prefix to apply to all installation directories.
-Usually this is not needed, but certain auto-installers like
-to stage an install in a temporary directory, and then copy
-the files to their real destination.  This option can be used
-to specify the temporary directory prefix.  Note that if you
-specify this option, BackupPC won't run correctly if you try
-to run it from below the --dest-dir directory, since all the
-paths are set assuming BackupPC is installed in the intended
-final locations.
+An optional prefix to apply to all installation directories.  Usually this
+is not needed, but is used by package creators, or certain auto-installers
+that like to stage an install in a temporary directory, and then copy
+the files to their real destination.  This option can be used to specify
+the target directory prefix.  If you specify this option any existing
+installation should be ignored.  Note that BackupPC won't run correctly if
+you try to run it from below the --dest-dir directory, since all the paths
+are set assuming BackupPC is installed in the intended final locations.
 
 =item B<--fhs>
 
@@ -1338,6 +1447,8 @@ configure.pl verifies that the script is being run as the super user
 exit with an error if not run as the super user, and in interactive mode
 the user will be prompted.  Specifying this option will cause the script
 to continue even if the user id is not root.
+
+=back
 
 =head1 EXAMPLES
 

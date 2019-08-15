@@ -11,7 +11,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2001-2013  Craig Barratt
+#   Copyright (C) 2001-2017  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 1 Dec 2013.
+# Version 4.0.0, released 3 Mar 2017.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -46,9 +46,12 @@ use Cwd;
 use Digest::MD5;
 use Config;
 use Encode qw/from_to encode_utf8/;
+use POSIX qw/_exit/;
 
 use BackupPC::Storage;
 use BackupPC::XS;
+
+use constant ZeroLengthMD5Digest => pack("H*", "d41d8cd98f00b204e9800998ecf8427e");
 
 sub new
 {
@@ -59,7 +62,7 @@ sub new
     # Whether to use filesystem hierarchy standard for file layout.
     # If set, text config files are below /etc/BackupPC.
     #
-    my $useFHS = 0;
+    my $useFHS = 1;
     my $paths;
 
     #
@@ -95,7 +98,7 @@ sub new
 
     my $bpc = bless {
 	%$paths,
-        Version => '4.0.0alpha3',
+        Version => '4.0.0',
     }, $class;
 
     $bpc->{storage} = BackupPC::Storage->new($paths);
@@ -125,10 +128,10 @@ sub new
     #
     if ( !$noUserCheck
 	    && $bpc->{Conf}{BackupPCUserVerify}
-	    && $> != (my $uid = (getpwnam($bpc->{Conf}{BackupPCUser}))[2]) ) {
+	    && $> != (my $uid = getpwnam($bpc->{Conf}{BackupPCUser})) ) {
 	print(STDERR "$0: Wrong user: my userid is $>, instead of $uid"
 	    . " ($bpc->{Conf}{BackupPCUser})\n");
-	print(STDERR "Please su $bpc->{Conf}{BackupPCUser} first\n");
+	print(STDERR "Please 'su [-m | -s shell] $bpc->{Conf}{BackupPCUser}' first\n");
 	return;
     }
 
@@ -437,7 +440,7 @@ sub ServerConnect
     my $sockFile = "$bpc->{RunDir}/BackupPC.sock";
     socket(*FH, PF_UNIX, SOCK_STREAM, 0)     || return "unix socket: $!";
     if ( !connect(*FH, sockaddr_un($sockFile)) ) {
-        my $err = "unix connect: $!";
+        my $err = "unix connect to $sockFile: $!";
         close(*FH);
         if ( $port > 0 ) {
             my $proto = getprotobyname('tcp');
@@ -445,8 +448,8 @@ sub ServerConnect
             my $paddr = sockaddr_in($port, $iaddr);
 
             socket(*FH, PF_INET, SOCK_STREAM, $proto)
-                                             || return "inet socket: $!";
-            connect(*FH, $paddr)             || return "inet connect: $!";
+                                             || return "inet socket port $port: $!";
+            connect(*FH, $paddr)             || return "inet connect port $port: $!";
         } else {
             return $err;
         }
@@ -530,6 +533,7 @@ sub ChildInit
     select(STDERR); $| = 1;
     select(STDOUT); $| = 1;
     $ENV{PATH} = $bpc->{Conf}{MyPath};
+    umask($bpc->{Conf}{UmaskMode});
 }
 
 #
@@ -579,8 +583,19 @@ sub MD52Path
 {
     my($bpc, $d, $compress, $poolDir) = @_;
 
-    my $b2 = vec($d, 0, 16);
+    #
+    # Injected fixed digest for collision testing on zero-sized file.
+    # If you uncomment this line, you also need to rebuild rsync_bpc
+    # and BackupPC::XS with the test code in bpc_digest_md52path()
+    # enabled, and also force the match in bpc_poolWrite_write to
+    # true.
+    #
+    # substr($d, 0, 16) = pack("H*", "d41d8cd98f00b204e9800998ecf8427e");
+    #
 
+    return "/dev/null" if ( $d eq ZeroLengthMD5Digest );
+
+    my $b2 = vec($d, 0, 16);
     $poolDir = ($compress ? $bpc->{CPoolDir} : $bpc->{PoolDir})
 		    if ( !defined($poolDir) );
     return sprintf("%s/%02x/%02x/%s", $poolDir,
@@ -818,7 +833,7 @@ sub CheckHostAlive
     }
 
     my $args = {
-	pingPath => $bpc->getPingPathByAddressType( $host ),
+	pingPath => $bpc->getPingPathByAddressType($host),
 	host     => $host,
     };
     $pingCmd = $bpc->cmdVarSubstitute($bpc->{Conf}{PingCmd}, $args);
@@ -828,7 +843,8 @@ sub CheckHostAlive
     #
     $s = $bpc->cmdSystemOrEval($pingCmd, undef, $args);
     if ( $? ) {
-	print(STDERR "CheckHostAlive: first ping failed ($?, $!)\n")
+        my $str = $bpc->execCmd2ShellCmd(@$pingCmd);
+	print(STDERR "CheckHostAlive: first ping ($str) failed ($?, $!)\n")
 			if ( $bpc->{verbose} );
 	return -1;
     }
@@ -838,7 +854,8 @@ sub CheckHostAlive
     #
     $s = $bpc->cmdSystemOrEval($pingCmd, undef, $args);
     if ( $? ) {
-	print(STDERR "CheckHostAlive: second ping failed ($?, $!)\n")
+        my $str = $bpc->execCmd2ShellCmd(@$pingCmd);
+	print(STDERR "CheckHostAlive: second ping ($str) failed ($?, $!)\n")
 			if ( $bpc->{verbose} );
 	return -1;
     }
@@ -853,22 +870,26 @@ sub CheckHostAlive
 	           . " (not fatal)\n") if ( $bpc->{verbose} );
 	$ret = 0;
     }
-    print(STDERR "CheckHostAlive: returning $ret\n") if ( $bpc->{verbose} );
+    if ( $bpc->{verbose} ) {
+        my $str = $bpc->execCmd2ShellCmd(@$pingCmd);
+        print(STDERR "CheckHostAlive: ran '$str'; returning $ret\n")
+    }
     return $ret;
 }
 
 sub CheckFileSystemUsage
 {
-    my($bpc) = @_;
+    my($bpc, $inode) = @_;
     my($topDir) = $bpc->{TopDir};
     my($s, $dfCmd);
+    my $cmd = $inode ? "DfInodeUsageCmd" : "DfCmd";
 
-    return 0 if ( $bpc->{Conf}{DfCmd} eq "" );
+    return 0 if ( $bpc->{Conf}{$cmd} eq "" );
     my $args = {
 	dfPath   => $bpc->{Conf}{DfPath},
 	topDir   => $bpc->{TopDir},
     };
-    $dfCmd = $bpc->cmdVarSubstitute($bpc->{Conf}{DfCmd}, $args);
+    $dfCmd = $bpc->cmdVarSubstitute($bpc->{Conf}{$cmd}, $args);
     $s = $bpc->cmdSystemOrEval($dfCmd, undef, $args);
     return 0 if ( $? || $s !~ /(\d+)%/s );
     return $1;
@@ -885,7 +906,7 @@ sub NetBiosInfoGet
     my($s, $nmbCmd);
 
     #
-    # Skip NetBios check if NmbLookupCmd is emtpy
+    # Skip NetBios check if NmbLookupCmd is empty
     #
     if ( $bpc->{Conf}{NmbLookupCmd} eq "" ) {
 	print(STDERR "NetBiosInfoGet: return $host because \$Conf{NmbLookupCmd}"
@@ -933,7 +954,7 @@ sub NetBiosHostIPFind
     my($s, $nmbCmd, $subnet, $ipAddr, $firstIpAddr);
 
     #
-    # Skip NetBios lookup if NmbLookupFindHostCmd is emtpy
+    # Skip NetBios lookup if NmbLookupFindHostCmd is empty
     #
     if ( $bpc->{Conf}{NmbLookupFindHostCmd} eq "" ) {
 	print(STDERR "NetBiosHostIPFind: return $host because"
@@ -1010,7 +1031,7 @@ sub fileNameUnmangle
 
 #
 # Escape shell meta-characters with backslashes.
-# This should be applied to each argument seperately, not an
+# This should be applied to each argument separately, not an
 # entire shell command.
 #
 sub shellEscape
@@ -1097,7 +1118,7 @@ sub cmdVarSubstitute
         #
         # Replace scalar variables first
         #
-        $arg =~ s[\${(\w+)}(\+?)]{
+        $arg =~ s[\$\{(\w+)}(\+?)]{
             exists($vars->{$1}) && ref($vars->{$1}) ne "ARRAY"
                 ? ($2 eq "+" ? $bpc->shellEscape($vars->{$1}) : $vars->{$1})
                 : "\${$1}$2"
@@ -1106,7 +1127,7 @@ sub cmdVarSubstitute
         # Now replicate any array arguments; this just works for just one
         # array var in each argument.
         #
-        if ( $arg =~ m[(.*)\${(\w+)}(\+?)(.*)] && ref($vars->{$2}) eq "ARRAY" ) {
+        if ( $arg =~ m[(.*)\$\{(\w+)}(\+?)(.*)] && ref($vars->{$2}) eq "ARRAY" ) {
             my $pre  = $1;
             my $var  = $2;
             my $esc  = $3;
@@ -1138,7 +1159,7 @@ sub cmdExecOrEval
 			if ( $bpc->{verbose} );
         eval($cmd);
         print(STDERR "Perl code fragment for exec shouldn't return!!\n");
-        exit(1);
+        POSIX::_exit(1);
     } else {
         $cmd = [split(/\s+/, $cmd)] if ( ref($cmd) ne "ARRAY" );
 	print(STDERR "cmdExecOrEval: about to exec ",
@@ -1151,7 +1172,7 @@ sub cmdExecOrEval
 	#
         exec { $cmd->[0] } @$cmd;
         print(STDERR "Exec failed for @$cmd\n");
-        exit(1);
+        POSIX::_exit(1);
     }
 }
 
@@ -1198,7 +1219,6 @@ sub cmdSystemOrEvalLong
 	    return $err        if ( !defined($stdoutCB) );
 	    return;
 	}
-	binmode(CHILD);
 	if ( !$pid ) {
 	    #
 	    # This is the child
@@ -1216,7 +1236,7 @@ sub cmdSystemOrEvalLong
 	    #
 	    exec { $cmd->[0] } @$cmd;
             print(STDERR "Exec of @$cmd failed\n");
-            exit(1);
+            POSIX::_exit(1);
 	}
 
 	#
@@ -1227,6 +1247,7 @@ sub cmdSystemOrEvalLong
 	#
 	# The parent gathers the output from the child
 	#
+	binmode(CHILD);
 	while ( <CHILD> ) {
 	    $$stdoutCB .= $_ if ( ref($stdoutCB) eq 'SCALAR' );
 	    &$stdoutCB($_)   if ( ref($stdoutCB) eq 'CODE' );
@@ -1347,6 +1368,39 @@ sub sortedPCLogFiles
 }
 
 #
+# Opens a writeable file handle to the per-client's LOG file.
+# Also ages LOG files if the LOG file is new
+#
+sub openPCLogFile
+{
+    my($bpc, $client) = @_;
+    my($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+    my $logPath = sprintf("%s/pc/%s/LOG.%02d%04d", $bpc->{TopDir}, $client, $mon + 1, $year + 1900);
+    my $logFd;
+
+    if ( !-f $logPath ) {
+        #
+        # Compress and prune old log files
+        #
+        my $lastLog = $bpc->{Conf}{MaxOldPerPCLogFiles} - 1;
+        foreach my $file ( $bpc->sortedPCLogFiles($client) ) {
+            if ( $lastLog <= 0 ) {
+                unlink($file);
+                next;
+            }
+            $lastLog--;
+            next if ( $file =~ /\.z$/ || !$bpc->{Conf}{CompressLevel} );
+            BackupPC::XS::compressCopy($file,
+                                        "$file.z",
+                                        undef,
+                                        $bpc->{Conf}{CompressLevel}, 1);
+        }
+    }
+    open($logFd, ">>", $logPath);
+    return ($logFd, $logPath);
+}
+
+#
 # converts a glob-style pattern into a perl regular expression.
 #
 sub glob2re
@@ -1393,11 +1447,14 @@ sub flushXSLibMesgs()
 # Return 4 if it resolves to an IPv4 address, 6 if it resolves to an IPv6
 # address or undef if it can not be resolved.
 #
-sub resolve
+sub getHostAddrInfo
 {
-    my ( $bpc, $host ) = @_;
-    my ( $err, @addrs ) = Socket::getaddrinfo($host);
-    return undef if ( $err );
+    my($bpc, $host) = @_;
+    my($err, @addrs);
+    eval { ($err, @addrs) = Socket::getaddrinfo($host) };
+    if ( $@ || $err || !@addrs ) {
+        return defined(gethostbyname($host)) ? 4 : undef;
+    }
     return (($addrs[0])->{'family'} == Socket::AF_INET6) ? 6 : 4;
 }
 
@@ -1406,9 +1463,9 @@ sub resolve
 #
 sub getPingPathByAddressType
 {
-    my ( $bpc, $host ) = @_;
-    my $at = $bpc->resolve( $host ) || 4;
-    return ($at == 6) ? $bpc->{Conf}{PingPath6} : $bpc->{Conf}{PingPath};
+    my($bpc, $host) = @_;
+    my $at = $bpc->getHostAddrInfo($host) || 4;
+    return ($at == 6) ? $bpc->{Conf}{Ping6Path} : $bpc->{Conf}{PingPath};
 }
 
 1;

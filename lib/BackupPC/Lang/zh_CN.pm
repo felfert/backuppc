@@ -58,7 +58,6 @@ $Lang{Unable_to_connect_to_BackupPC_server} = "无法连接到 BackupPC 服务�
 $Lang{Unable_to_connect_to_BackupPC_server_error_message} = <<EOF;
 CGI 脚本程序 (\$MyURL) 无法连接到 BackupPC 服务器 \$Conf{ServerHost} 端口 \$Conf{ServerPort}。错误信息：\$err。
 可能 BackupPC 服务器没有运行，或者服务器配置不正确。请通知网络系统管理员。
-<br><br>
 EOF
 
 $Lang{Admin_Start_Server} = <<EOF;
@@ -94,6 +93,9 @@ $Lang{BackupPC_Server_Status_General_Info}= <<EOF;
         <li>备份池文件系统磁盘空间占用率是 \$Info{DUlastValue}%
             （统计于 \$DUlastTime），今天的最大占用率是 \$Info{DUDailyMax}%（统计于 \$DUmaxTime），
             昨天的最大占用率是 \$Info{DUDailyMaxPrev}%。
+        <li>Inode 备份池文件系统磁盘空间占用率是 \$Info{DUInodelastValue}%
+            （统计于 \$DUlastTime），今天的最大占用率是 \$Info{DUInodeDailyMax}%（统计于 \$DUInodemaxTime），
+            昨天的最大占用率是 \$Info{DUInodeDailyMaxPrev}%。
     </ul>
 </ul>
 EOF
@@ -104,7 +106,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 <p>
 \${h2("正在运行的任务")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td> 客户机 </td>
     <td> 类型 </td>
     <td> 用户 </td>
@@ -123,7 +125,7 @@ $Lang{BackupPC_Server_Status} = <<EOF;
 
 \${h2("需要关注的错误")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> 客户机 </td>
     <td align="center"> 类型 </td>
     <td align="center"> 用户 </td>
@@ -147,6 +149,9 @@ $Lang{BackupPC_Summary} = <<EOF;
 <li>备份池文件系统磁盘空间占用率是 \$Info{DUlastValue}%
     （统计于 \$DUlastTime），今天的最大占用率是 \$Info{DUDailyMax}%（统计于 \$DUmaxTime），
     昨天的最大占用率是 \$Info{DUDailyMaxPrev}%。
+<li>Inode 备份池文件系统磁盘空间占用率是 \$Info{DUInodelastValue}%
+    （统计于 \$DUlastTime），今天的最大占用率是 \$Info{DUInodeDailyMax}%（统计于 \$DUInodemaxTime），
+    昨天的最大占用率是 \$Info{DUInodeDailyMaxPrev}%。
 </ul>
 </p>
 
@@ -163,6 +168,7 @@ $Lang{BackupPC_Summary} = <<EOF;
 <table class="sortable" id="host_summary_backups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> 客户机 </td>
     <td align="center"> 用户 </td>
+    <td align="center"> 评论 </td>
     <td align="center"> 完全备份个数 </td>
     <td align="center"> 最后一次完全备份 (天前) </td>
     <td align="center"> 完全备份大小 (GiB) </td>
@@ -175,7 +181,6 @@ $Lang{BackupPC_Summary} = <<EOF;
     <td align="center"> 最后一次备份结果 </td></tr>
 \$strGood
 </table>
-<br><br>
 \${h2("未备份过的客户机")}
 <p>
 有 \$hostCntNone 台客户机从未被备份过。
@@ -183,6 +188,7 @@ $Lang{BackupPC_Summary} = <<EOF;
 <table class="sortable" id="host_summary_nobackups" border cellpadding="3" cellspacing="1">
 <tr class="tableheader"><td> 客户机 </td>
     <td align="center"> 用户 </td>
+    <td align="center"> 评论 </td>
     <td align="center"> 完全备份个数 </td>
     <td align="center"> 最后一次完全备份 (天前) </td>
     <td align="center"> 完全备份大小 (GiB) </td>
@@ -310,6 +316,7 @@ EOF
 
 # --------------------------------
 $Lang{BackupPC__Backup_Requested_on__host} = "BackupPC: 客户机 \$host 有备份请求";
+$Lang{BackupPC__Delete_Requested_for_a_backup_of__host} = "BackupPC: Delete Requested for a backup of \$host";
 # --------------------------------
 $Lang{REPLY_FROM_SERVER} = <<EOF;
 \${h1(\$str)}
@@ -372,36 +379,36 @@ $Lang{BackupPC__Queue_Summary} = "BackupPC: 队列报告";
 # --------------------------------
 $Lang{Backup_Queue_Summary} = <<EOF;
 \${h1("备份请求队列报告")}
-<br><br>
 \${h2("用户队列报告")}
 <p>
 下列用户请求排在队列中：
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> 客户机 </td>
+    <td> Action </td>
     <td> 请求时间 </td>
     <td> 用户 </td></tr>
 \$strUser
 </table>
-<br><br>
 
 \${h2("后台请求队列报告")}
 <p>
 下列后台请求排在队列中：
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> 客户机 </td>
+    <td> Action </td>
     <td> 请求时间 </td>
     <td> 用户 </td></tr>
 \$strBg
 </table>
-<br><br>
 \${h2("命令队列报告")}
 <p>
 下列命令请求排在队列中：
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td> 客户机 </td>
+    <td> Action </td>
     <td> 请求时间 </td>
     <td> 用户 </td>
     <td> 命令 </td></tr>
@@ -430,7 +437,7 @@ $Lang{BackupPC__Log_File_History} = "BackupPC: 日志文件历史";
 $Lang{Log_File_History__hdr} = <<EOF;
 \${h1("日志文件历史 \$hdr")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> 文件 </td>
     <td align="center"> 大小 </td>
     <td align="center"> 修改时间 </td></tr>
@@ -442,7 +449,7 @@ EOF
 $Lang{Recent_Email_Summary} = <<EOF;
 \${h1("最近电子邮件报告（最新排前）")}
 <p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> 收信人 </td>
     <td align="center"> 客户机 </td>
     <td align="center"> 时间 </td>
@@ -636,6 +643,34 @@ $Lang{BackupPC_Archive_Reply_from_server} = <<EOF;
 EOF
 
 
+# --------------------------------
+$Lang{BackupPC__Delete_Backup_Confirm__num_of__host} = "BackupPC: Delete Backup Confirm #\$num of \$host";
+# --------------------------------
+$Lang{A_filled} = "a filled";
+$Lang{An_unfilled} = "an unfilled";
+$Lang{Are_you_sure_delete} = <<EOF;
+\${h1("Are you sure?")}
+<p>
+You are about to delete \$filled \$type backup #\$num of \$host.
+
+<form name="Confirm" action="\$MyURL" method="get">
+
+<input type="hidden" name="host" value="\${EscHTML(\$host)}">
+<input type="hidden" name="num" value="\$num">
+
+<input type="hidden" name="doit" value="1">
+<input type="hidden" name="action" value="">
+
+Do you really want to do this?
+
+<input type="button" value="\${EscHTML(\$Lang->{CfgEdit_Button_Delete})}"
+ onClick="document.Confirm.action.value='deleteBackup';
+          document.Confirm.submit();">
+
+<input type="submit" value="No" name="ignore">
+</form>
+EOF
+
 # -------------------------
 $Lang{Host__host_Backup_Summary} = "BackupPC: 客户机 \$host 备份报告";
 
@@ -665,7 +700,7 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 <p>
 点击备份序列号浏览和恢复文件。
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3">
 <tr class="tableheader"><td align="center"> 备份序列号＃ </td>
     <td align="center"> 类型 </td>
     <td align="center"> 完整 </td>
@@ -673,6 +708,7 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
     <td align="center"> 开始时间 </td>
     <td align="center"> 耗时（分钟）</td>
     <td align="center"> 距离现在（天前）</td>
+    \$deleteHdrStr
     <td align="center"> 服务器上备份路径 </td>
 </tr>
 \$str
@@ -681,10 +717,8 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 
 \$restoreStr
 </p>
-<br><br>
 \${h2("传输错误报告")}
-<br><br>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> 备份序列号＃ </td>
     <td align="center"> 类型 </td>
     <td align="center"> 查看 </td>
@@ -695,20 +729,19 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 </tr>
 \$errStr
 </table>
-<br><br>
 
 \${h2("文件大小／数目统计")}
 <p>
 "原有文件"是指原先已存在备份池中的文件；"新增文件"是指备份新写入池中的文件。
 空文件不被统计在内。
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="2" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> 合计 </td>
     <td align="center" colspan="2"> 原有文件 </td>
     <td align="center" colspan="2"> 新增文件 </td>
 </tr>
-<tr class="tableheader">
+<tr class="tableheader sortheader">
     <td align="center"> 备份序列号＃ </td>
     <td align="center"> 类型 </td>
     <td align="center"> 文件数目 </td>
@@ -721,18 +754,17 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 </tr>
 \$sizeStr
 </table>
-<br><br>
 
 \${h2("压缩报告")}
 <p>
 备份池中原有文件和新增文件的压缩性能报告。
 </p>
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td colspan="3" bgcolor="#ffffff"></td>
     <td align="center" colspan="3"> 原有文件 </td>
     <td align="center" colspan="3"> 新增文件 </td>
 </tr>
-<tr class="tableheader"><td align="center"> 备份序列号＃ </td>
+<tr class="tableheader sortheader"><td align="center"> 备份序列号＃ </td>
     <td align="center"> 类型 </td>
     <td align="center"> 压缩级别 </td>
     <td align="center"> 压缩前(MB) </td>
@@ -744,7 +776,6 @@ $Lang{Host__host_Backup_Summary2} = <<EOF;
 </tr>
 \$compStr
 </table>
-<br><br>
 EOF
 
 $Lang{Host__host_Archive_Summary} = "BackupPC: 客户机 \$host 备档报告";
@@ -881,7 +912,7 @@ $Lang{DirHistory_for__host} = <<EOF;
 <li> 点击目录链接标记 (\$Lang->{DirHistory_dirLink}) 进入相应目录，
 <li> 点击文件版本链接标记 (\$Lang->{DirHistory_fileLink}0,
      \$Lang->{DirHistory_fileLink}1, ...) 下载相应文件，
-<li> 如果一个文件的内容在多个备份中相同，文件在多个备份中具有相同版本号，
+<li> 如果一个文件的内容在多个备份中相同，文件在多个备份中具有相同版本号，(PleaseTranslateThis: except between v3 and v4 backups)
 <li> 如果一个文件或目录在某个备份中不存在，下表中用空白表示，
 <li> 具有相同版本号的文件可能在不同备份中有不同的文件属性。可以点击备份序列号来查看文件在相应备份中的属性。
 </ul>
@@ -983,6 +1014,8 @@ $Lang{Only_privileged_users_can_view_log_files} = "只有特权用户可以查�
 $Lang{Only_privileged_users_can_view_email_summaries} = "只有特权用户可以查看电子邮件报告。";
 $Lang{Only_privileged_users_can_browse_backup_files} = "只有特权用户可以浏览"
                 . "客户机 \${EscHTML(\$In{host})} 的备份文件。";
+$Lang{Only_privileged_users_can_delete_backups} = "Only privileged users can delete backups"
+                . " of host \${EscHTML(\$host)}.";
 $Lang{Empty_host_name} = "空客户机名。";
 $Lang{Directory___EscHTML} = "目录 \${EscHTML(\"\$TopDir/pc/\$host/\$num\")}"
 		    . " 为空";
@@ -1028,6 +1061,8 @@ $Lang{Backup_requested_on_DHCP__host} = "用户 \$User 从 \$ENV{REMOTE_ADDR} �
 $Lang{Backup_requested_on__host_by__User} = "用户 \$User 发起请求备份客户机 \$host";
 $Lang{Backup_stopped_dequeued_on__host_by__User} = "用户 \$User 停止／取消了对客户机 \$host 的备份";
 $Lang{Restore_requested_to_host__hostDest__backup___num} = "用户 \$User 从 \$ENV{REMOTE_ADDR} 发起请求恢复客户机 \$hostDest，使用备份序列号 #\$num";
+$Lang{Delete_requested_for_backup_of__host_by__User} = "Delete requested for backup #\$num of \$host"
+             . " by \$User from \$ENV{REMOTE_ADDR}";
 $Lang{Archive_requested} = "用户 \$User 从 \$ENV{REMOTE_ADDR} 发起备档请求";
 
 # -------------------------------------------------
@@ -1164,7 +1199,7 @@ $Lang{Restore_Summary} = <<EOF;
 \${h2("恢复报告")}
 <p>
 点击恢复序列号获取详情。
-<table class="tableStnd" border cellspacing="1" cellpadding="3" width="80%">
+<table class="tableStnd sortable" border cellspacing="1" cellpadding="3" width="80%">
 <tr class="tableheader"><td align="center"> 恢复序列号 </td>
     <td align="center"> 结果 </td>
     <td align="right"> 开始时间 </td>
@@ -1267,7 +1302,7 @@ $headers
 此致敬礼，
 
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # No recent backup
@@ -1293,7 +1328,7 @@ $headers
 此致敬礼，
 
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 # Old Outlook files
@@ -1326,7 +1361,7 @@ $headers
 此致敬礼，
 
 BackupPC Genie
-http://backuppc.sourceforge.net
+https://backuppc.github.io/backuppc
 EOF
 
 $Lang{howLong_not_been_backed_up} = "还从未被成功备份过";
@@ -1345,6 +1380,7 @@ $Lang{RSS_Host_Summary}    = <<EOF;
 增量备份个数：\$incrCnt;
 最后一次增量备份 (天前)：\$incrAge;
 当前状态：\$host_state;
+残: \$host_disabled;
 最后一次备份结果：\$host_last_attempt;
 EOF
 

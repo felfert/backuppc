@@ -11,7 +11,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2001-2013  Craig Barratt
+#   Copyright (C) 2001-2017  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha3, released 1 Dec 2013.
+# Version 4.1.4, released 24 Nov 2017.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -67,7 +67,7 @@ require DynaLoader;
 %EXPORT_TAGS = ('BPC_DT_ALL' => [@EXPORT, @EXPORT_OK]);
 
 BEGIN {
-    eval "use IO::Dirent qw( readdirent DT_DIR );";
+    eval "use IO::Dirent qw( readdirent );";
     $IODirentLoaded = 1 if ( !$@ );
 };
 
@@ -109,26 +109,43 @@ sub dirRead
 
     from_to($path, "utf8", $need->{charsetLegacy})
                         if ( $need->{charsetLegacy} ne "" );
-    return if ( !opendir(my $fh, $path) );
+    return [] if ( !opendir(my $fh, $path) );
     if ( $IODirentLoaded && !$IODirentOk ) {
         #
         # Make sure the IO::Dirent really works - some installs
         # on certain file systems (eg: XFS) don't return a valid type.
+        # and some fail to return valid inode numbers.
         #
+        # Also create a temporary file to make sure the inode matches.
+        #
+        my $tempTestFile = ".TestFileDirent.$$";
+        my $fullTempTestFile = $bpc->{TopDir} . "/$tempTestFile";
+        if ( open(my $fh, ">", $fullTempTestFile) ) {
+            close($fh);
+        }
         if ( opendir(my $fh, $bpc->{TopDir}) ) {
-            my $dt_dir = eval("DT_DIR");
             foreach my $e ( readdirent($fh) ) {
-                if ( $e->{name} eq "." && $e->{type} == $dt_dir ) {
-                    $IODirentOk = 1;
-                    last;
+                if ( $e->{name} eq "."
+                        && $e->{type} == BPC_DT_DIR
+                        && $e->{inode} == (stat($bpc->{TopDir}))[1] ) {
+                    $IODirentOk |= 0x1;
+                }
+                if ( $e->{name} eq $tempTestFile
+                        && $e->{type} == BPC_DT_REG
+                        && $e->{inode} == (stat($fullTempTestFile))[1] ) {
+                    $IODirentOk |= 0x2;
                 }
             }
             closedir($fh);
         }
+        unlink($fullTempTestFile) if ( -f $fullTempTestFile );
         #
         # if it isn't ok then don't check again.
         #
-        $IODirentLoaded = 0 if ( !$IODirentOk );
+        if ( $IODirentOk != 0x3 ) {
+            $IODirentLoaded = 0;
+            $IODirentOk     = 0;
+        }
     }
     if ( $IODirentOk ) {
         @entries = sort({ $a->{inode} <=> $b->{inode} } readdirent($fh));
@@ -190,6 +207,20 @@ sub dirReadNames
     return \@names;
 }
 
+#
+# Check if a directory contains an attrib file.
+# Returns the attrib file name, or undef if none present.
+#
+sub dirContainsAttrib
+{
+    my($bpc, $dir) = @_;
+
+    my $entries = BackupPC::DirOps::dirRead($bpc, $dir);
+    foreach my $e ( @$entries ) {
+        return $e->{name} if ( $e->{name} =~ /^attrib/ );
+    }
+}
+
 sub find
 {
     my($bpc, $param, $dir, $dontDoCwd) = @_;
@@ -210,9 +241,9 @@ sub find
 # didn't always completely remove a directory tree on a NetApp.
 #
 # This routine updates the reference counts every time it
-# encounters an attrib file (unless $compress < 0).
-# So you must have called BackupPC::XS::PoolRefCnt::DeltaFileInit()
-# first.
+# encounters an attrib file (unless $compress < 0), assuming
+# $deltaInfo is passed as a BackupPC::XS::DeltaRefCnt::new()
+# object.
 #
 # The $compress argument has three values:
 #  >0   compression is on; reference counts will be updated
@@ -230,18 +261,18 @@ sub find
 #
 sub RmTreeQuiet
 {
-    my($bpc, $roots, $compress, $progressCB) = @_;
+    my($bpc, $roots, $compress, $deltaInfo, $attrCache, $progressCB) = @_;
 
     my($cwd) = Cwd::fastcwd();
     $cwd = $1 if ( $cwd =~ /(.*)/ );
-    my $ret = BackupPC::DirOps::RmTreeQuietInner($bpc, $cwd, $roots, $compress, $progressCB);
+    my $ret = BackupPC::DirOps::RmTreeQuietInner($bpc, $cwd, $roots, $compress, $deltaInfo, $attrCache, $progressCB);
     chdir($cwd) if ( $cwd );
     return $ret;
 }
 
 sub RmTreeQuietInner
 {
-    my($bpc, $cwd, $roots, $compress, $progressCB) = @_;
+    my($bpc, $cwd, $roots, $compress, $deltaInfo, $attrCache, $progressCB) = @_;
     my(@files, $root);
 
     if ( defined($roots) && length($roots) ) {
@@ -271,31 +302,52 @@ sub RmTreeQuietInner
 
         #
         # If this is an attrib file then we need to open it to
-        # update the reference counts
+        # update the reference counts if the caller wants us to
         #
         if ( $compress >= -1 && $name =~ /^attrib/ && -f $name ) {
-            my $attr = BackupPC::XS::Attrib::new($compress);
-            if ( !$attr->read(".", $name) ) {
-                print(STDERR "Can't read attribute file in $cwd/$path/$name: " . $attr->errStr() . "\n");
-            }
-            my $attrAll = $attr->get();
-            my $d = $attr->digest();
-
-            BackupPC::XS::PoolRefCnt::DeltaUpdate($compress, $d, -1) if ( length($d) );
-            if ( $compress >= 0 ) {
-                foreach my $fileUM ( keys(%$attrAll) ) {
-                    my $a = $attrAll->{$fileUM};
-                    BackupPC::XS::PoolRefCnt::DeltaUpdate($compress, $a->{digest}, -1)
-                                                    if ( length($a->{digest}) );
+            if ( $deltaInfo ) {
+                my $attr = BackupPC::XS::Attrib::new($compress);
+                if ( !$attr->read(".", $name) ) {
+                    print(STDERR "Can't read attribute file in $cwd/$path/$name\n");
                 }
+                my $attrAll = $attr->get();
+                my $d = $attr->digest();
+
+                $deltaInfo->update($compress, $d, -1) if ( $deltaInfo && length($d) );
+                if ( $compress >= 0 ) {
+                    foreach my $fileUM ( keys(%$attrAll) ) {
+                        my $a = $attrAll->{$fileUM};
+                        $deltaInfo->update($compress, $a->{digest}, -1)
+                                                        if ( $deltaInfo && length($a->{digest}) );
+			next if ( $a->{nlinks} == 0 || !$deltaInfo || !$attrCache );
+                        #
+                        # If caller supplied deltaInfo and attrCache then updated the inodes too
+                        #
+			my $aInode = $attrCache->getInode($a->{inode});
+			$aInode->{nlinks}--;
+			if ( $aInode->{nlinks} <= 0 ) {
+			    $deltaInfo->update($compress, $aInode->{digest}, -1);
+			    $attrCache->deleteInode($a->{inode});
+			} else {
+			    $attrCache->setInode($a->{inode}, $aInode);
+			}
+                    }
+                }
+                &$progressCB(scalar(keys(%$attrAll))) if ( ref($progressCB) eq 'CODE' );
+            } else {
+                #
+                # the callback should know it's directories, not files in the non-ref
+                # counting case
+                #
+                &$progressCB(1) if ( ref($progressCB) eq 'CODE' );
             }
-            &$progressCB(scalar(keys(%$attrAll))) if ( ref($progressCB) eq 'CODE' );
         }
         if ( $compress < -1 && ref($progressCB) eq 'CODE' ) {
             #
             # Do progress counting in the non-ref count case
+            # (the callback should know it's directories, not files)
             #
-            &$progressCB(1);
+            &$progressCB(1) if ( ref($progressCB) eq 'CODE' );
         }
 
 	#
@@ -315,7 +367,7 @@ sub RmTreeQuietInner
 		    print(STDERR "Can't read $cwd/$path/$name: $!\n");
 		} else {
 		    @files = grep $_ !~ /^\.{1,2}$/, @$d;
-		    BackupPC::DirOps::RmTreeQuietInner($bpc, "$cwd/$name", \@files, $compress, $progressCB);
+		    BackupPC::DirOps::RmTreeQuietInner($bpc, "$cwd/$name", \@files, $compress, $deltaInfo, $attrCache, $progressCB);
 		    if ( !chdir("..") ) {
                         print(STDERR "RmTreeQuietInner: can't chdir .. (while removing $root)\n");
                         return 1;

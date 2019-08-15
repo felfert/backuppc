@@ -1,4 +1,4 @@
-#!/sbin/runscript
+#!/sbin/openrc-run
 #
 # DESCRIPTION
 #
@@ -20,8 +20,13 @@ checkconfig() {
 
 start() {
 	checkconfig || return 1
+
+	PID_DIR=$(dirname "${PID_FILE}")
+	mkdir -p "${PID_DIR}" || return 1
+	chown ${USER}:${USER} "${PID_DIR}" || return 1
+
 	ebegin "Starting BackupPC"
-	start-stop-daemon --start --chuid ${USER} --user ${USER} --pidfile ${PID_FILE} --exec ${EXEC} -- ${EXEC_OPTIONS}
+	start-stop-daemon --start --user ${USER} --group ${USER} --make-pidfile --pidfile ${PID_FILE} --exec ${EXEC} -- ${EXEC_OPTIONS}
 	eend $?
 }
 
@@ -43,4 +48,3 @@ status() {
 	return
 	eend $?
 }
-

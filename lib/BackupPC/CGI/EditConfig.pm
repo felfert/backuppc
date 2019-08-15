@@ -10,7 +10,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2005-2013  Craig Barratt
+#   Copyright (C) 2005-2018  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha2, released 15 Sep 2013.
+# Version 4.2.2, released 27 Oct 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -41,6 +41,8 @@ use BackupPC::Config::Meta qw(:all);
 use BackupPC::Storage;
 use Data::Dumper;
 use Encode;
+
+my $debugText = "";
 
 our %ConfigMenu = (
     server => {
@@ -67,6 +69,8 @@ our %ConfigMenu = (
             {text => "CfgEdit_Title_Pool_Filesystem_Limits"},
 	    {name => "DfCmd"},
 	    {name => "DfMaxUsagePct"},
+	    {name => "DfInodeUsageCmd"},
+	    {name => "DfMaxInodeUsagePct"},
 	    {name => "HardLinkMax"},
 
             {text => "CfgEdit_Title_Other_Parameters"},
@@ -86,7 +90,7 @@ our %ConfigMenu = (
 	    {name => "SshPath"},
 	    {name => "NmbLookupPath"},
 	    {name => "PingPath"},
-	    {name => "PingPath6"},
+	    {name => "Ping6Path"},
 	    {name => "DfPath"},
 	    {name => "SplitPath"},
 	    {name => "ParPath"},
@@ -123,6 +127,7 @@ our %ConfigMenu = (
             {name => "EMailNotifyMinDays"},
             {name => "EMailFromUserName"},
             {name => "EMailAdminUserName"},
+            {name => "EMailAdminSubject"},
             {name => "EMailUserDestDomain"},
 
             {text => "CfgEdit_Title_Email_User_Messages"},
@@ -166,6 +171,7 @@ our %ConfigMenu = (
 	    {name => "CgiUserUrlCreate"},
 
 	    {text => "CfgEdit_Title_User_Config_Editing"},
+	    {name => "CgiUserDeleteBackupEnable"},
 	    {name => "CgiUserConfigEditEnable"},
 	    {name => "CgiUserConfigEdit"},
         ],
@@ -178,6 +184,7 @@ our %ConfigMenu = (
             {name => "XferLogLevel"},
             {name => "ClientCharset"},
             {name => "ClientCharsetLegacy"},
+            {name => "RefCntFsck"},
 
             ### Smb Settings
             {text => "CfgEdit_Title_Smb_Settings",
@@ -344,6 +351,7 @@ our %ConfigMenu = (
 	    {name => "PingMaxMsec"},
 	    
 	    {text => "CfgEdit_Title_Other"},
+	    {name => "ClientComment"},
 	    {name => "ClientTimeout"},
 	    {name => "MaxOldPerPCLogFiles"},
 	    {name => "CompressLevel"},
@@ -385,7 +393,8 @@ sub action
     my $Privileged = CheckPermission($host)
                        && ($PrivAdmin || $Conf{CgiUserConfigEditEnable});
     my $userHost = 1 if ( defined($host) );
-    my $debugText;
+
+    $debugText = "";
 
     if ( !$Privileged ) {
         ErrorExit(eval("qq{$Lang->{Only_privileged_users_can_edit_config_files}}"));
@@ -406,15 +415,15 @@ sub action
             # add extra variables to make the shape the same.
             #
             #print STDERR Dumper(\%In);
-            foreach my $v ( keys(%In) ) {
-                if ( $v =~ /^v_zZ_(\Q$var\E(_zZ_.*|$))/ ) {
-                    delete($In{$v}) if ( !defined($In{"orig_zZ_$1"}) );
+            foreach my $v ( sort(keys(%In)) ) {
+                if ( $v =~ /^v_((zZ_|flds_)\Q$var\E(_zZ_.*|$))/ ) {
+                    delete($In{$v}) if ( !defined($In{"orig_$1"}) );
                 }
-                if ( $v =~ /^orig_zZ_(\Q$var\E(_zZ_.*|$))/ ) {
-                    $In{"v_zZ_$1"} = $In{$v};
+                if ( $v =~ /^orig_((zZ_|flds_)\Q$var\E(_zZ_.*|$))/ ) {
+                    $In{"v_$1"} = $In{$v};
                 }
             }
-            delete($In{"vflds.$var"});
+            #delete($In{"v_flds_$var"});
         }
 
         ($newConf, $override) = inputParse($bpc, $userHost);
@@ -428,7 +437,7 @@ sub action
 	if ( $host ne "" ) {
 	    $hostConf = $bpc->ConfigDataRead($host);
 	    $override = {};
-	    foreach my $param ( keys(%$hostConf) ) {
+	    foreach my $param ( sort(keys(%$hostConf)) ) {
 		$override->{$param} = 1;
 	    }
 	} else {
@@ -461,8 +470,11 @@ sub action
             foreach my $paramInfo ( @{$ConfigMenu{$m}{param}} ) {
                 my $param = $paramInfo->{name};
                 if ( defined($paramInfo->{text}) ) {
-                    $text = $n;
-                    $mask[$text] = 1;
+                    $mask[$n] = 1;
+		    if ( ref($paramInfo->{visible}) ne "CODE"
+			    || &{$paramInfo->{visible}}($newConf, $bpc) ) {
+			$text = $n;
+		    }
                 } else {
                     if ( $bpc->{Conf}{CgiUserConfigEdit}{$param}
                           || (defined($bpc->{Conf}{CgiUserConfigEdit}{$param})
@@ -610,8 +622,9 @@ EOF
 	    return false;
 	}
 	var allVars = {};
-	var varRE  = new RegExp("^v_zZ_(" + varName + ".*)");
-	var origRE = new RegExp("^orig_zZ_(" + varName + ".*)");
+	var varRE  = new RegExp("^v_((zZ_|flds_)" + varName + ".*)");
+	var origRE = new RegExp("^orig_((zZ_|flds_)" + varName + ".*)");
+	var fldsRE = new RegExp("^flds_");
         for ( var i = 0 ; i < document.editForm.elements.length ; i++ ) {
 	    var e = document.editForm.elements[i];
 	    var re;
@@ -620,7 +633,7 @@ EOF
 		    allVars[re[1]] = 0;
 		}
 		allVars[re[1]]++;
-		//debugMsg("found v_zZ_ match with " + re[1]);
+		//debugMsg("found v_ match with " + re[1]);
 		//debugMsg("allVars[" + re[1] + "] = " + allVars[re[1]]);
 	    } else if ( (re = origRE.exec(e.name)) != null ) {
 		if ( allVars[re[1]] == null ) {
@@ -635,13 +648,20 @@ EOF
 	    if ( allVars[v] != 0 ) {
 		//debugMsg("Not the same shape because of " + v);
 		sameShape = 0;
-	    } else {
+                break;
+            }
+            if ( fldsRE.exec(v) != null ) {
+                // always rebuild a compound variable
+		sameShape = 0;
+                break;
+            }
+        }
+	if ( sameShape ) {
+            for ( v in allVars ) {
                 // copy the original variable values
 		//debugMsg("setting " + v);
-		eval("document.editForm.v_zZ_" + v + ".value = document.editForm.orig_zZ_" + v + ".value");
+		eval("document.editForm.v_" + v + ".value = document.editForm.orig_" + v + ".value");
             }
-	}
-	if ( sameShape ) {
 	    return true;
 	} else {
             // need to rebuild the form since the compound variable
@@ -679,9 +699,6 @@ EOF
 
 //-->
 </script>
-
-<span id="debug">$debugText</span>
-
 EOF
 
     $content .= <<EOF;
@@ -714,7 +731,7 @@ EOF
 	if ( $host ne "" ) {
 	    $hostConf = $bpc->ConfigDataRead($host) if ( !defined($hostConf) );
             my %hostConf2 = %$hostConf;
-	    foreach my $param ( keys(%$newConf) ) {
+	    foreach my $param ( sort(keys(%$newConf)) ) {
                 if ( $override->{$param} ) {
                     $hostConf->{$param} = $newConf->{$param}
                 } else {
@@ -735,7 +752,7 @@ EOF
             }
             foreach my $entry ( @{$newConf->{Hosts}} ) {
                 next if ( $entry->{host} eq ""
-                           || defined($hostsNew->{$entry->{host}}) );
+                           || defined($hostsNew->{lc($entry->{host})}) );
                 if ( $entry->{host} =~ /(.+?)\s*=\s*(.+)/ ) {
                     if ( defined($allHosts->{$2}) ) {
                         $entry->{host} = $1;
@@ -747,11 +764,11 @@ EOF
                     }
                 }
                 push(@$hostsSave, $entry);
-                $hostsNew->{$entry->{host}} = $entry;
+                $hostsNew->{lc($entry->{host})} = $entry;
             }
             ($mesg, my $hostChange) = hostsDiffMesg($hostsNew);
             $bpc->HostInfoWrite($hostsNew) if ( $hostChange );
-            foreach my $host ( keys(%$copyConf) ) {
+            foreach my $host ( sort(keys(%$copyConf)) ) {
                 #
                 # Currently host names are forced to lc when they
                 # are read from the hosts file.  Therefore we need
@@ -864,12 +881,13 @@ EOF
 $errorTxt
 $tblContent
 </table>
+<span id="debug"><pre>$debugText</pre></span>
 EOF
 
     #
     # Emit all the remaining editable config settings as hidden values
     #
-    foreach my $param ( keys(%ConfigMeta) ) {
+    foreach my $param ( sort(keys(%ConfigMeta)) ) {
         next if ( $doneParam->{$param} );
         next if ( $userHost
                       && (!defined($bpc->{Conf}{CgiUserConfigEdit}{$param})
@@ -894,7 +912,7 @@ EOF
             # Emit the new settings as orig_zZ_ parameters
             #
             $doneParam = {};
-            foreach my $param ( keys(%ConfigMeta) ) {
+            foreach my $param ( sort(keys(%ConfigMeta)) ) {
                 next if ( $doneParam->{$param} );
                 next if ( $userHost
                           && (!defined($bpc->{Conf}{CgiUserConfigEdit}{$param})
@@ -912,12 +930,13 @@ EOF
             #
             # Just switching menus: copy all the orig_zZ_ input parameters
             #
-            foreach my $var ( keys(%In) ) {
-                next if ( $var !~ /^orig_zZ_/ );
-                my $val = decode_utf8($In{$var});
-                $contentHidden .= <<EOF;
+            foreach my $var ( sort(keys(%In)) ) {
+                if ( $var =~ /^orig_(zZ_|flds_)/ ) {
+                    my $val = decode_utf8($In{$var});
+                    $contentHidden .= <<EOF;
 <input type="hidden" name="$var" value="${EscHTML($val)}">
 EOF
+                }
             }
 	}
     } else {
@@ -925,7 +944,7 @@ EOF
 	# First time: emit all the original config settings
 	#
 	$doneParam = {};
-        foreach my $param ( keys(%ConfigMeta) ) {
+        foreach my $param ( sort(keys(%ConfigMeta)) ) {
             next if ( $doneParam->{$param} );
             next if ( $userHost
                           && (!defined($bpc->{Conf}{CgiUserConfigEdit}{$param})
@@ -978,7 +997,8 @@ sub fieldHiddenBuild
             @order = sort(keys(%$varValue));
         }
 
-        foreach my $fld ( @order ) {
+        for ( my $fldNum = 0 ; $fldNum < @order ; $fldNum++ ) {
+            my $fld = $order[$fldNum];
             if ( defined($type->{child}) ) {
                 $childType = $type->{child}{$fld};
             } else {
@@ -988,10 +1008,10 @@ sub fieldHiddenBuild
                 # rather than hard-coded
                 #
                 $content .= <<EOF;
-<input type="hidden" name="vflds.$varName" value="${EscHTML($fld)}">
+<input type="hidden" name="${prefix}_flds_${varName}_zZ_$fldNum" value="${EscHTML($fld)}">
 EOF
             }
-            $content .= fieldHiddenBuild($childType, "${varName}_zZ_$fld",
+            $content .= fieldHiddenBuild($childType, "${varName}_zZ_$fldNum",
                                          $varValue->{$fld}, $prefix);
         }
     } elsif ( $type->{type} eq "shortlist" ) {
@@ -1076,7 +1096,7 @@ EOF
             push(@$varValue, undef);
             $In{addVar} = "";
         }
-        $content .= "<table border=\"1\" cellspacing=\"0\">\n";
+        $content .= "<table border=\"1\" cellspacing=\"0\" class=\"editSubTable\">\n";
         my $colspan;
 
         if ( ref($type) eq "HASH" && ref($type->{child}) eq "HASH"
@@ -1138,7 +1158,7 @@ EOF
         $content .= "</td>\n";
     } elsif ( $type->{type} eq "hash" ) {
         $content .= "<td class=\"border\">\n";
-        $content .= "<table border=\"1\" cellspacing=\"0\">\n";
+        $content .= "<table border=\"1\" cellspacing=\"0\" class=\"editSubTable\">\n";
         $varValue = {} if ( ref($varValue) ne "HASH" );
 
         if ( !$isError && !$type->{noKeyEdit}
@@ -1170,14 +1190,15 @@ EOF
             @order = sort(keys(%$varValue));
         }
 
-        foreach my $fld ( @order ) {
+        for ( my $fldNum = 0 ; $fldNum < @order ; $fldNum++ ) {
+            my $fld = $order[$fldNum];
             $content .= <<EOF;
 <tr><td class="border">$fld
 EOF
             if ( !$type->{noKeyEdit}
 		    && (keys(%$varValue) > 1 || $type->{emptyOk}) ) {
                 $content .= <<EOF;
-<input type="submit" name="del_${varName}_zZ_$fld" value="${EscHTML($Lang->{CfgEdit_Button_Delete})}"
+<input type="button" name="del_${varName}_zZ_$fld" value="${EscHTML($Lang->{CfgEdit_Button_Delete})}"
         onClick="deleteSubmit('${varName}_zZ_$fld')">
 EOF
             }
@@ -1190,11 +1211,11 @@ EOF
                 # rather than hard-coded
                 #
                 $content .= <<EOF;
-<input type="hidden" name="vflds.$varName" value="${EscHTML($fld)}">
+<input type="hidden" name="v_flds_${varName}_zZ_$fldNum" value="${EscHTML($fld)}">
 EOF
             }
             $content .= "</td>\n";
-            $content .= fieldEditBuild($childType, "${varName}_zZ_$fld",
+            $content .= fieldEditBuild($childType, "${varName}_zZ_$fldNum",
                             $varValue->{$fld}, $errors, $level + 1, undef,
 			    $isError, $onchangeSubmit,
 			    $overrideVar, $overrideSet);
@@ -1224,7 +1245,8 @@ EOF
             @order = sort(keys(%$varValue));
         }
 
-        foreach my $fld ( @order ) {
+        for ( my $fldNum = 0 ; $fldNum < @order ; $fldNum++ ) {
+            my $fld = $order[$fldNum];
             if ( defined($type->{child}) ) {
                 $childType = $type->{child}{$fld};
             } else {
@@ -1234,10 +1256,10 @@ EOF
                 # rather than hard-coded
                 #
                 $content .= <<EOF;
-<input type="hidden" name="vflds.$varName" value="${EscHTML($fld)}">
+<input type="hidden" name="v_flds_${varName}_zZ_$fldNum" value="${EscHTML($fld)}">
 EOF
             }
-            $content .= fieldEditBuild($childType, "${varName}_zZ_$fld",
+            $content .= fieldEditBuild($childType, "${varName}_zZ_$fldNum",
                             $varValue->{$fld}, $errors, $level + 1, undef,
 			    $isError, $onchangeSubmit,
 			    $overrideVar, $overrideSet);
@@ -1316,7 +1338,7 @@ sub errorCheck
 {
     my $errors = {};
 
-    foreach my $param ( keys(%ConfigMeta) ) {
+    foreach my $param ( sort(keys(%ConfigMeta)) ) {
         fieldErrorCheck($ConfigMeta{$param}, $param, $errors);
     }
     return $errors;
@@ -1341,15 +1363,19 @@ sub fieldErrorCheck
         } elsif ( defined($type->{child}) ) {
             @order = sort(keys(%{$type->{child}}));
         } else {
-            @order = split(/\0/, $In{"vflds.$varName"});
+            for ( my $fldNum = 0 ; ; $fldNum++ ) {
+                last if ( !defined($In{"v_flds_${varName}_zZ_$fldNum"}) );
+                push(@order, $In{"v_flds_${varName}_zZ_$fldNum"});
+            }
         }
-        foreach my $fld ( @order ) {
+        for ( my $fldNum = 0 ; $fldNum < @order ; $fldNum++ ) {
+            my $fld = $order[$fldNum];
             if ( defined($type->{child}) ) {
                 $childType = $type->{child}{$fld};
             } else {
                 $childType = $type->{childType};
             }
-            $ret ||= fieldErrorCheck($childType, "${varName}_zZ_$fld", $errors);
+            $ret ||= fieldErrorCheck($childType, "${varName}_zZ_$fldNum", $errors);
         }
         return $ret;
     } else {
@@ -1416,7 +1442,7 @@ sub inputParse
     my $conf     = {};
     my $override = {};
 
-    foreach my $param ( keys(%ConfigMeta) ) {
+    foreach my $param ( sort(keys(%ConfigMeta)) ) {
         my $value;
         next if ( $userHost
                       && (!defined($bpc->{Conf}{CgiUserConfigEdit}{$param})
@@ -1453,17 +1479,21 @@ sub fieldInputParse
         } elsif ( defined($type->{child}) ) {
             @order = sort(keys(%{$type->{child}}));
         } else {
-            @order = split(/\0/, $In{"vflds.$varName"});
+            for ( my $fldNum = 0 ; ; $fldNum++ ) {
+                last if ( !defined($In{"v_flds_${varName}_zZ_$fldNum"}) );
+                push(@order, $In{"v_flds_${varName}_zZ_$fldNum"});
+            }
         }
 
-        foreach my $fld ( @order ) {
+        for ( my $fldNum = 0 ; $fldNum < @order ; $fldNum++ ) {
+            my $fld = $order[$fldNum];
             my $val;
             if ( defined($type->{child}) ) {
                 $childType = $type->{child}{$fld};
             } else {
                 $childType = $type->{childType};
             }
-            $ret ||= fieldInputParse($childType, "${varName}_zZ_$fld", \$val);
+            $ret ||= fieldInputParse($childType, "${varName}_zZ_$fldNum", \$val);
             last if ( $ret );
             $$value->{$fld} = $val;
         }
@@ -1530,7 +1560,7 @@ sub configDiffMesg
         $conf = "main config";
     }
 
-    foreach my $p ( keys(%ConfigMeta) ) {
+    foreach my $p ( sort(keys(%ConfigMeta)) ) {
         if ( !exists($oldConf->{$p}) && !exists($newConf->{$p}) ) {
             next;
         } elsif ( exists($oldConf->{$p}) && !exists($newConf->{$p}) ) {
@@ -1591,13 +1621,13 @@ sub hostsDiffMesg
     my $hostsOld = $bpc->HostInfoRead();
     my($mesg, $hostChange);
 
-    foreach my $host ( keys(%$hostsOld) ) {
+    foreach my $host ( sort(keys(%$hostsOld)) ) {
         if ( !defined($hostsNew->{$host}) ) {
             $mesg .= eval("qq($Lang->{CfgEdit_Log_Host_Delete})");
             $hostChange++;
             next;
         }
-        foreach my $key ( keys(%{$hostsNew->{$host}}) ) {
+        foreach my $key ( sort(keys(%{$hostsNew->{$host}})) ) {
             next if ( $hostsNew->{$host}{$key} eq $hostsOld->{$host}{$key} );
             my $valueOld = $hostsOld->{$host}{$key};
             my $valueNew = $hostsNew->{$host}{$key};
@@ -1606,7 +1636,7 @@ sub hostsDiffMesg
         }
     }
 
-    foreach my $host ( keys(%$hostsNew) ) {
+    foreach my $host ( sort(keys(%$hostsNew)) ) {
         next if ( defined($hostsOld->{$host}) );
         my $dump = Data::Dumper->new([$hostsNew->{$host}]);
         $dump->Indent(0);

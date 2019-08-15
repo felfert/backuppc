@@ -10,7 +10,7 @@
 #   Craig Barratt  <cbarratt@users.sourceforge.net>
 #
 # COPYRIGHT
-#   Copyright (C) 2004-2013  Craig Barratt
+#   Copyright (C) 2004-2018  Craig Barratt
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@
 #
 #========================================================================
 #
-# Version 4.0.0alpha2, released 15 Sep 2013.
+# Version 4.2.2, released 27 Oct 2018.
 #
 # See http://backuppc.sourceforge.net.
 #
@@ -86,9 +86,10 @@ use vars qw(%ConfigMeta);
     SshPath	 	=> {type => "execPath", undefIfEmpty => 1},
     NmbLookupPath 	=> {type => "execPath", undefIfEmpty => 1},
     PingPath	 	=> {type => "execPath", undefIfEmpty => 1},
-    PingPath6	 	=> {type => "execPath", undefIfEmpty => 1},
+    Ping6Path	 	=> {type => "execPath", undefIfEmpty => 1},
     DfPath	 	=> {type => "execPath", undefIfEmpty => 1},
     DfCmd	 	=> "string",
+    DfInodeUsageCmd	=> "string",
     SplitPath	 	=> {type => "execPath", undefIfEmpty => 1},
     ParPath	 	=> {type => "execPath", undefIfEmpty => 1},
     CatPath	 	=> {type => "execPath", undefIfEmpty => 1},
@@ -96,6 +97,7 @@ use vars qw(%ConfigMeta);
     Bzip2Path	 	=> {type => "execPath", undefIfEmpty => 1},
     RrdToolPath	 	=> {type => "execPath", undefIfEmpty => 1},
     DfMaxUsagePct	=> "float",
+    DfMaxInodeUsagePct	=> "float",
     DHCPAddressRanges   => {
             type    => "list",
 	    emptyOk => 1,
@@ -201,6 +203,7 @@ use vars qw(%ConfigMeta);
 
     ClientCharset       => "string",
     ClientCharsetLegacy => "string",
+    RefCntFsck          => "integer",
 
     ######################################################################
     # Smb Configuration
@@ -308,6 +311,7 @@ use vars qw(%ConfigMeta);
     ######################################################################
     NmbLookupCmd 	=> "string",
     NmbLookupFindHostCmd => "string",
+    ClientComment       => "string",
 
     FixedIPNetBiosNameCheck => "boolean",
     PingCmd	 	=> "string",
@@ -329,7 +333,12 @@ use vars qw(%ConfigMeta);
     ArchivePostUserCmd	=> {type => "string", undefIfEmpty => 1},
     UserCmdCheckStatus  => "boolean",
 
-    ClientNameAlias 	=> {type => "string", undefIfEmpty => 1},
+    ClientNameAlias 	=> {
+	    type    => "list",
+	    emptyOk => 1,
+	    undefIfEmpty => 1,
+	    child   => "string",
+    },
 
     ######################################################################
     # Email reminders, status and messages
@@ -339,6 +348,7 @@ use vars qw(%ConfigMeta);
     EMailNotifyMinDays        => "float",
     EMailFromUserName         => "string",
     EMailAdminUserName        => "string",
+    EMailAdminSubject         => "string",
     EMailUserDestDomain       => "string",
     EMailNoBackupEverSubj     => {type => "string",    undefIfEmpty => 1},
     EMailNoBackupEverMesg     => {type => "bigstring", undefIfEmpty => 1},
@@ -401,6 +411,7 @@ use vars qw(%ConfigMeta);
         },
     CgiImageDirURL 	=> "string",
     CgiCSSFile	 	=> "string",
+    CgiUserDeleteBackupEnable => "integer",
     CgiUserConfigEditEnable => "boolean",
     CgiUserConfigEdit   => {
 	    type => "hash",
@@ -428,9 +439,11 @@ use vars qw(%ConfigMeta);
                 XferLogLevel              => "boolean",
                 ClientCharset             => "boolean",
                 ClientCharsetLegacy       => "boolean",
+                RefCntFsck                => "boolean",
                 SmbShareName              => "boolean",
                 SmbShareUserName          => "boolean",
                 SmbSharePasswd            => "boolean",
+                SmbClientPath             => "boolean",
                 SmbClientFullCmd          => "boolean",
                 SmbClientIncrCmd          => "boolean",
                 SmbClientRestoreCmd       => "boolean",
@@ -441,10 +454,10 @@ use vars qw(%ConfigMeta);
                 TarClientPath             => "boolean",
                 TarClientRestoreCmd       => "boolean",
                 RsyncShareName            => "boolean",
+                RsyncBackupPCPath         => "boolean",
                 RsyncdClientPort          => "boolean",
                 RsyncdUserName            => "boolean",
                 RsyncdPasswd              => "boolean",
-                RsyncdAuthRequired        => "boolean",
                 RsyncArgs                 => "boolean",
                 RsyncArgsExtra            => "boolean",
                 RsyncRestoreArgs          => "boolean",
@@ -473,6 +486,7 @@ use vars qw(%ConfigMeta);
                 MaxOldPerPCLogFiles       => "boolean",
                 CompressLevel             => "boolean",
                 ClientNameAlias           => "boolean",
+                ClientComment             => "boolean",
                 DumpPreUserCmd            => "boolean",
                 DumpPostUserCmd           => "boolean",
                 RestorePreUserCmd         => "boolean",
@@ -484,6 +498,7 @@ use vars qw(%ConfigMeta);
                 UserCmdCheckStatus        => "boolean",
                 EMailNotifyMinDays        => "boolean",
                 EMailFromUserName         => "boolean",
+                EMailAdminSubject         => "boolean",
                 EMailAdminUserName        => "boolean",
                 EMailUserDestDomain       => "boolean",
                 EMailNoBackupEverSubj     => "boolean",
